@@ -93,12 +93,18 @@ func (r *BackupRunner) BackupMySQL(ctx context.Context, jobName string, opt Back
 
 	// Check disk space
 	if r.Config.Core.DiskGuardEnabled {
+		minFree, err := configenv.ParseSize(r.Config.Core.DiskMinFreeSize)
+		if err != nil {
+			r.writeFailedRecord("mysql", jobName, target, startTime, err)
+			return exiterr.New(exiterr.ExitConfig, fmt.Errorf("解析磁盘最小剩余空间失败: %w", err))
+		}
 		guard := disk.NewGuard(
-			parseSize(r.Config.Core.DiskMinFreeSize),
+			minFree,
 			r.Config.Core.DiskMinFreePercent,
 			r.Config.Core.DiskEstimateBufferPercent,
 		)
 		if err := guard.CheckDiskSpace(target.BackupDir, estimated); err != nil {
+			r.writeFailedRecord("mysql", jobName, target, startTime, err)
 			return exiterr.New(exiterr.ExitDiskInsufficient, err)
 		}
 	}
@@ -117,7 +123,8 @@ func (r *BackupRunner) BackupMySQL(ctx context.Context, jobName string, opt Back
 			artifact := &result.Artifacts[i]
 			checksumVal, err := checksum.FileSHA256(artifact.Path)
 			if err != nil {
-				return exiterr.New(exiterr.ExitChecksumFailed, fmt.Errorf("calculating checksum for %s: %w", artifact.Path, err))
+				r.writeFailedRecord("mysql", jobName, target, startTime, err)
+				return exiterr.New(exiterr.ExitChecksumFailed, fmt.Errorf("计算 %s 的 checksum 失败: %w", artifact.Path, err))
 			}
 			artifact.ChecksumType = "sha256"
 			artifact.Checksum = checksumVal
@@ -127,13 +134,13 @@ func (r *BackupRunner) BackupMySQL(ctx context.Context, jobName string, opt Back
 	// Write manifest
 	m := r.buildManifest("mysql", jobName, result)
 	if err := r.Manifest.Write(m, result.BackupDir); err != nil {
-		return exiterr.New(exiterr.ExitGeneral, fmt.Errorf("writing manifest: %w", err))
+		return exiterr.New(exiterr.ExitGeneral, fmt.Errorf("写入 manifest 失败: %w", err))
 	}
 
 	// Write index record
 	record := r.buildRecord("mysql", jobName, result, startTime)
 	if err := r.IndexStore.Append(record); err != nil {
-		return exiterr.New(exiterr.ExitIndexError, fmt.Errorf("writing index: %w", err))
+		return exiterr.New(exiterr.ExitIndexError, fmt.Errorf("写入索引失败: %w", err))
 	}
 
 	// Run retention if enabled
@@ -141,10 +148,10 @@ func (r *BackupRunner) BackupMySQL(ctx context.Context, jobName string, opt Back
 		r.runRetention("mysql", jobName)
 	}
 
-	fmt.Printf("Backup completed: %s\n", result.BackupID)
-	fmt.Printf("  Backup dir: %s\n", result.BackupDir)
-	fmt.Printf("  Duration: %d seconds\n", result.DurationSec)
-	fmt.Printf("  Databases: %v\n", result.Databases)
+	fmt.Printf("备份完成：%s\n", result.BackupID)
+	fmt.Printf("  备份目录: %s\n", result.BackupDir)
+	fmt.Printf("  耗时: %d 秒\n", result.DurationSec)
+	fmt.Printf("  数据库: %v\n", result.Databases)
 
 	return nil
 }
@@ -199,12 +206,18 @@ func (r *BackupRunner) BackupPostgreSQL(ctx context.Context, jobName string, opt
 
 	// Check disk space
 	if r.Config.Core.DiskGuardEnabled {
+		minFree, err := configenv.ParseSize(r.Config.Core.DiskMinFreeSize)
+		if err != nil {
+			r.writeFailedRecord("postgresql", jobName, target, startTime, err)
+			return exiterr.New(exiterr.ExitConfig, fmt.Errorf("解析磁盘最小剩余空间失败: %w", err))
+		}
 		guard := disk.NewGuard(
-			parseSize(r.Config.Core.DiskMinFreeSize),
+			minFree,
 			r.Config.Core.DiskMinFreePercent,
 			r.Config.Core.DiskEstimateBufferPercent,
 		)
 		if err := guard.CheckDiskSpace(target.BackupDir, estimated); err != nil {
+			r.writeFailedRecord("postgresql", jobName, target, startTime, err)
 			return exiterr.New(exiterr.ExitDiskInsufficient, err)
 		}
 	}
@@ -222,7 +235,8 @@ func (r *BackupRunner) BackupPostgreSQL(ctx context.Context, jobName string, opt
 			artifact := &result.Artifacts[i]
 			checksumVal, err := checksum.FileSHA256(artifact.Path)
 			if err != nil {
-				return exiterr.New(exiterr.ExitChecksumFailed, fmt.Errorf("calculating checksum for %s: %w", artifact.Path, err))
+				r.writeFailedRecord("postgresql", jobName, target, startTime, err)
+				return exiterr.New(exiterr.ExitChecksumFailed, fmt.Errorf("计算 %s 的 checksum 失败: %w", artifact.Path, err))
 			}
 			artifact.ChecksumType = "sha256"
 			artifact.Checksum = checksumVal
@@ -232,13 +246,13 @@ func (r *BackupRunner) BackupPostgreSQL(ctx context.Context, jobName string, opt
 	// Write manifest
 	m := r.buildManifest("postgresql", jobName, result)
 	if err := r.Manifest.Write(m, result.BackupDir); err != nil {
-		return exiterr.New(exiterr.ExitGeneral, fmt.Errorf("writing manifest: %w", err))
+		return exiterr.New(exiterr.ExitGeneral, fmt.Errorf("写入 manifest 失败: %w", err))
 	}
 
 	// Write index record
 	record := r.buildRecord("postgresql", jobName, result, startTime)
 	if err := r.IndexStore.Append(record); err != nil {
-		return exiterr.New(exiterr.ExitIndexError, fmt.Errorf("writing index: %w", err))
+		return exiterr.New(exiterr.ExitIndexError, fmt.Errorf("写入索引失败: %w", err))
 	}
 
 	// Run retention if enabled
@@ -246,10 +260,10 @@ func (r *BackupRunner) BackupPostgreSQL(ctx context.Context, jobName string, opt
 		r.runRetention("postgresql", jobName)
 	}
 
-	fmt.Printf("Backup completed: %s\n", result.BackupID)
-	fmt.Printf("  Backup dir: %s\n", result.BackupDir)
-	fmt.Printf("  Duration: %d seconds\n", result.DurationSec)
-	fmt.Printf("  Databases: %v\n", result.Databases)
+	fmt.Printf("备份完成：%s\n", result.BackupID)
+	fmt.Printf("  备份目录: %s\n", result.BackupDir)
+	fmt.Printf("  耗时: %d 秒\n", result.DurationSec)
+	fmt.Printf("  数据库: %v\n", result.Databases)
 
 	return nil
 }
@@ -368,12 +382,12 @@ func (r *BackupRunner) writeFailedRecord(dbType, jobName string, target engine.B
 
 // printDryRun prints dry run information
 func (r *BackupRunner) printDryRun(dbType, jobName string, target engine.BackupTarget) error {
-	fmt.Printf("Dry run mode - no backup will be performed\n")
-	fmt.Printf("  DB Type: %s\n", dbType)
-	fmt.Printf("  Job: %s\n", jobName)
-	fmt.Printf("  Backup ID: %s\n", target.BackupID)
-	fmt.Printf("  Backup Dir: %s\n", target.BackupDir)
-	fmt.Printf("  Databases: %v\n", target.Databases)
+	fmt.Printf("预演模式：不会执行真实备份\n")
+	fmt.Printf("  数据库类型: %s\n", dbType)
+	fmt.Printf("  环境: %s\n", jobName)
+	fmt.Printf("  备份ID: %s\n", target.BackupID)
+	fmt.Printf("  备份目录: %s\n", target.BackupDir)
+	fmt.Printf("  数据库: %v\n", target.Databases)
 	return nil
 }
 
@@ -412,7 +426,11 @@ func (r *BackupRunner) runRetention(dbType, jobName string) {
 	keepFailedLast = r.Config.Core.RetentionKeepFailedLast
 
 	// Parse max size
-	maxSizeBytes, _ := configenv.ParseSize(maxSize)
+	maxSizeBytes, err := configenv.ParseSize(maxSize)
+	if err != nil {
+		fmt.Printf("警告：解析保留策略最大大小失败：%v\n", err)
+		return
+	}
 
 	// Query records for this job
 	records, err := r.IndexStore.Query(index.QueryFilter{
@@ -420,7 +438,7 @@ func (r *BackupRunner) runRetention(dbType, jobName string) {
 		Job:    jobName,
 	})
 	if err != nil {
-		fmt.Printf("Warning: failed to query records for retention: %v\n", err)
+		fmt.Printf("警告：查询保留策略记录失败：%v\n", err)
 		return
 	}
 
@@ -447,30 +465,23 @@ func (r *BackupRunner) runRetention(dbType, jobName string) {
 	}
 
 	// Delete pruned backup directories
+	deleted := 0
 	for _, rec := range toPrune {
 		if rec.BackupDir != "" && rec.BackupDir != backupDir {
-			fmt.Printf("Pruning backup: %s (dir: %s)\n", rec.BackupID, rec.BackupDir)
-			os.RemoveAll(rec.BackupDir)
+			fmt.Printf("正在清理备份：%s（目录：%s）\n", rec.BackupID, rec.BackupDir)
+			if err := os.RemoveAll(rec.BackupDir); err != nil {
+				fmt.Printf("警告：清理 %s 失败：%v\n", rec.BackupID, err)
+				continue
+			}
+			deleted++
 		}
 	}
 
-	fmt.Printf("Retention: pruned %d backup(s)\n", len(toPrune))
-}
-
-// parseSize parses size string to bytes
-func parseSize(s string) int64 {
-	// Simple implementation, can be enhanced
-	var size int64
-	var unit string
-	fmt.Sscanf(s, "%d%s", &size, &unit)
-	switch unit {
-	case "G", "GB":
-		return size * 1024 * 1024 * 1024
-	case "M", "MB":
-		return size * 1024 * 1024
-	case "K", "KB":
-		return size * 1024
-	default:
-		return size
+	if deleted > 0 {
+		if err := r.IndexStore.Rebuild(r.Config.Core.BackupRoot); err != nil {
+			fmt.Printf("警告：保留策略执行后重建索引失败：%v\n", err)
+		}
 	}
+
+	fmt.Printf("保留策略：已清理 %d 个备份\n", deleted)
 }

@@ -61,10 +61,10 @@ func (r CheckReport) Summary() string {
 	}
 
 	if fail > 0 {
-		return "FAILED"
+		return "检查失败"
 	}
 	if warn > 0 {
-		return "PASSED with warnings"
+		return "检查通过，但存在警告"
 	}
-	return "PASSED"
+	return "检查通过"
 }

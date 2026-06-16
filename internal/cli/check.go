@@ -21,30 +21,30 @@ func newCheckCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "check",
-		Short: "Check config, dependencies, permissions and disk space",
-		Long: `Check the environment and configuration for dbbackupctl.
+		Short: "检查配置、依赖、权限和磁盘空间",
+		Long: `检查 dbbackupctl 的运行环境和配置。
 
-This command verifies:
-  - Configuration files exist and are valid
-  - Environment variables are properly set
-  - secret.env has correct permissions (600)
-  - Backup directories exist and are writable
-  - Required tools are available (mysqldump, pg_dump, zstd, etc.)
-  - Database connections are working
-  - Disk space meets requirements
-  - No stale locks exist`,
+检查内容：
+  - 配置文件存在且合法
+  - 环境变量和密码配置可解析
+  - secret.env 权限是否安全
+  - 备份目录是否存在且可写
+  - mysqldump、pg_dump、zstd 等依赖是否可用
+  - 数据库连接是否可用
+  - 磁盘空间是否满足阈值
+  - 锁目录是否正常`,
 		Example: `  dbbackupctl check
-  dbbackupctl check --mysql
-  dbbackupctl check --postgresql
+  dbbackupctl check --mysql --job dev
+  dbbackupctl check --postgresql --job dev
   dbbackupctl check --job prod`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCheck(mysql, postgresql, job)
 		},
 	}
 
-	cmd.Flags().BoolVar(&mysql, "mysql", false, "Check MySQL configuration only")
-	cmd.Flags().BoolVar(&postgresql, "postgresql", false, "Check PostgreSQL configuration only")
-	cmd.Flags().StringVar(&job, "job", "", "Check specific job configuration")
+	cmd.Flags().BoolVar(&mysql, "mysql", false, "只检查 MySQL 配置")
+	cmd.Flags().BoolVar(&postgresql, "postgresql", false, "只检查 PostgreSQL 配置")
+	cmd.Flags().StringVar(&job, "job", "", "只检查指定环境，例如 dev、prod")
 
 	return cmd
 }
@@ -54,8 +54,8 @@ func runCheck(mysql, postgresql bool, job string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		// If config loading fails, try to create a basic check report
-		fmt.Fprintf(os.Stderr, "Warning: Cannot load config: %v\n", err)
-		fmt.Println("Check FAILED: Configuration error")
+		fmt.Fprintf(os.Stderr, "警告：无法加载配置：%v\n", err)
+		fmt.Println("检查失败：配置错误")
 		return exiterr.New(exiterr.ExitConfig, err)
 	}
 
@@ -78,7 +78,7 @@ func runCheck(mysql, postgresql bool, job string) error {
 
 	// Return error if any check failed
 	if report.HasFailure() {
-		return exiterr.New(exiterr.ExitGeneral, fmt.Errorf("check failed"))
+		return exiterr.New(exiterr.ExitGeneral, fmt.Errorf("检查失败"))
 	}
 
 	return nil
@@ -87,7 +87,7 @@ func runCheck(mysql, postgresql bool, job string) error {
 func printCheckJSON(report *checker.CheckReport) error {
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling JSON: %w", err)
+		return fmt.Errorf("序列化 JSON 失败: %w", err)
 	}
 	fmt.Println(string(data))
 	return nil
@@ -97,19 +97,19 @@ func printCheckTable(report *checker.CheckReport) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	// Print header
-	fmt.Fprintf(w, "STATUS\tCHECK\tMESSAGE\n")
-	fmt.Fprintf(w, "------\t-----\t-------\n")
+	fmt.Fprintf(w, "状态\t检查项\t说明\n")
+	fmt.Fprintf(w, "----\t------\t----\n")
 
 	// Print items
 	for _, item := range report.Items {
 		status := string(item.Status)
 		switch item.Status {
 		case checker.CheckOK:
-			status = "OK"
+			status = "通过"
 		case checker.CheckWarn:
-			status = "WARN"
+			status = "警告"
 		case checker.CheckFail:
-			status = "FAIL"
+			status = "失败"
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\n", status, item.Name, item.Message)
 	}

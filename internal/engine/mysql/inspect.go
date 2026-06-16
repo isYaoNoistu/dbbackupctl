@@ -23,12 +23,12 @@ func NewInspector() *Inspector {
 func (i *Inspector) CheckDependency(ctx context.Context) error {
 	// Check mysqldump
 	if _, err := exec.LookPath("mysqldump"); err != nil {
-		return fmt.Errorf("mysqldump not found in PATH: %w", err)
+		return fmt.Errorf("PATH 中未找到 mysqldump: %w", err)
 	}
 
 	// Check mysql
 	if _, err := exec.LookPath("mysql"); err != nil {
-		return fmt.Errorf("mysql not found in PATH: %w", err)
+		return fmt.Errorf("PATH 中未找到 mysql: %w", err)
 	}
 
 	return nil
@@ -39,12 +39,12 @@ func (i *Inspector) CheckConnection(ctx context.Context, job engine.JobConfig) e
 	dsn := buildDSN(job)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return fmt.Errorf("opening MySQL connection: %w", err)
+		return fmt.Errorf("打开 MySQL 连接失败: %w", err)
 	}
 	defer db.Close()
 
 	if err := db.PingContext(ctx); err != nil {
-		return fmt.Errorf("pinging MySQL: %w", err)
+		return fmt.Errorf("MySQL Ping 失败: %w", err)
 	}
 
 	return nil
@@ -55,14 +55,14 @@ func (i *Inspector) GetDatabases(ctx context.Context, job engine.JobConfig, incl
 	dsn := buildDSN(job)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("opening MySQL connection: %w", err)
+		return nil, fmt.Errorf("打开 MySQL 连接失败: %w", err)
 	}
 	defer db.Close()
 
 	query := "SHOW DATABASES"
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("querying databases: %w", err)
+		return nil, fmt.Errorf("查询数据库列表失败: %w", err)
 	}
 	defer rows.Close()
 
@@ -77,7 +77,7 @@ func (i *Inspector) GetDatabases(ctx context.Context, job engine.JobConfig, incl
 	for rows.Next() {
 		var db string
 		if err := rows.Scan(&db); err != nil {
-			return nil, fmt.Errorf("scanning database: %w", err)
+			return nil, fmt.Errorf("读取数据库列表失败: %w", err)
 		}
 
 		if !includeSystem && systemDatabases[db] {
@@ -95,7 +95,7 @@ func (i *Inspector) EstimateSize(ctx context.Context, job engine.JobConfig, data
 	dsn := buildDSN(job)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return 0, fmt.Errorf("opening MySQL connection: %w", err)
+		return 0, fmt.Errorf("打开 MySQL 连接失败: %w", err)
 	}
 	defer db.Close()
 
@@ -115,7 +115,7 @@ func (i *Inspector) EstimateSize(ctx context.Context, job engine.JobConfig, data
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return 0, fmt.Errorf("estimating size: %w", err)
+		return 0, fmt.Errorf("估算大小失败: %w", err)
 	}
 	defer rows.Close()
 
@@ -124,7 +124,7 @@ func (i *Inspector) EstimateSize(ctx context.Context, job engine.JobConfig, data
 		var schema string
 		var size int64
 		if err := rows.Scan(&schema, &size); err != nil {
-			return 0, fmt.Errorf("scanning size: %w", err)
+			return 0, fmt.Errorf("读取大小结果失败: %w", err)
 		}
 		totalSize += size
 	}

@@ -12,7 +12,7 @@ func (c *Checker) checkPermissions(report *CheckReport) {
 	// Skip permission checks on Windows
 	if runtime.GOOS == "windows" {
 		c.addItem(report, "permission.secret.env", CheckOK,
-			"Permission check skipped (Windows)", "")
+			"Windows 环境跳过权限检查", "")
 		return
 	}
 
@@ -23,11 +23,11 @@ func (c *Checker) checkPermissions(report *CheckReport) {
 		// Should be 0600 or at most 0640
 		if mode > 0640 {
 			c.addItem(report, "permission.secret.env", CheckFail,
-				fmt.Sprintf("secret.env has insecure permissions: %04o", mode),
-				"Run: chmod 600 /etc/dbbackupctl/secret.env")
+				fmt.Sprintf("secret.env 权限不安全: %04o", mode),
+				"执行: chmod 600 /etc/dbbackupctl/secret.env")
 		} else {
 			c.addItem(report, "permission.secret.env", CheckOK,
-				fmt.Sprintf("secret.env permissions: %04o", mode), "")
+				fmt.Sprintf("secret.env 权限: %04o", mode), "")
 		}
 	}
 
@@ -49,7 +49,7 @@ func (c *Checker) checkPermissions(report *CheckReport) {
 		}
 		if _, err := os.Stat(d.path); err == nil {
 			c.addItem(report, fmt.Sprintf("permission.%s", d.name), CheckOK,
-				fmt.Sprintf("%s exists", d.name), "")
+				fmt.Sprintf("%s 存在", d.name), "")
 		}
 	}
 }

@@ -13,18 +13,18 @@ import (
 func newShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show",
-		Short: "Show backup records",
-		Long: `Show backup records from the local index.
+		Short: "查询备份记录",
+		Long: `从本地索引查询备份记录。
 
-Available subcommands:
-  mysql       - Show MySQL backup records
-  postgresql  - Show PostgreSQL backup records
-  all         - Show all backup records
+子命令：
+  mysql       查询 MySQL 备份记录
+  postgresql  查询 PostgreSQL 备份记录
+  all         查询全部备份记录
 
-The backup records are stored in /data/dbbackupctl/index/backup_records.jsonl`,
+备份记录默认存储在 /data/dbbackupctl/index/backup_records.jsonl`,
 		Example: `  dbbackupctl show mysql
   dbbackupctl show mysql --last 10
-  dbbackupctl show mysql --job prod
+  dbbackupctl show mysql --job dev
   dbbackupctl show postgresql
   dbbackupctl show postgresql --last 10
   dbbackupctl show all
@@ -49,24 +49,24 @@ func newShowMySQLCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "mysql",
-		Short: "Show MySQL backup records",
-		Long: `Show MySQL backup records from the local index.
+		Short: "查询 MySQL 备份记录",
+		Long: `从本地索引查询 MySQL 备份记录。
 
-Default output shows the last 5 records in table format.
-Use --last to change the number of records shown.
-Use --json for machine-readable output.`,
+默认以表格显示最近 5 条记录。
+使用 --last 调整显示数量。
+使用 --json 输出机器可读格式。`,
 		Example: `  dbbackupctl show mysql
   dbbackupctl show mysql --last 10
-  dbbackupctl show mysql --job prod
+  dbbackupctl show mysql --job dev
   dbbackupctl show mysql --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runShow("mysql", last, job, json)
 		},
 	}
 
-	cmd.Flags().IntVar(&last, "last", 5, "Number of records to show")
-	cmd.Flags().StringVar(&job, "job", "", "Filter by job name")
-	cmd.Flags().BoolVar(&json, "json", false, "Output in JSON format")
+	cmd.Flags().IntVar(&last, "last", 5, "显示记录数量")
+	cmd.Flags().StringVar(&job, "job", "", "按环境名过滤，例如 dev、prod")
+	cmd.Flags().BoolVar(&json, "json", false, "以 JSON 格式输出")
 
 	return cmd
 }
@@ -80,12 +80,12 @@ func newShowPostgreSQLCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "postgresql",
-		Short: "Show PostgreSQL backup records",
-		Long: `Show PostgreSQL backup records from the local index.
+		Short: "查询 PostgreSQL 备份记录",
+		Long: `从本地索引查询 PostgreSQL 备份记录。
 
-Default output shows the last 5 records in table format.
-Use --last to change the number of records shown.
-Use --json for machine-readable output.`,
+默认以表格显示最近 5 条记录。
+使用 --last 调整显示数量。
+使用 --json 输出机器可读格式。`,
 		Example: `  dbbackupctl show postgresql
   dbbackupctl show postgresql --last 10
   dbbackupctl show postgresql --job prod
@@ -95,9 +95,9 @@ Use --json for machine-readable output.`,
 		},
 	}
 
-	cmd.Flags().IntVar(&last, "last", 5, "Number of records to show")
-	cmd.Flags().StringVar(&job, "job", "", "Filter by job name")
-	cmd.Flags().BoolVar(&json, "json", false, "Output in JSON format")
+	cmd.Flags().IntVar(&last, "last", 5, "显示记录数量")
+	cmd.Flags().StringVar(&job, "job", "", "按环境名过滤，例如 dev、prod")
+	cmd.Flags().BoolVar(&json, "json", false, "以 JSON 格式输出")
 
 	return cmd
 }
@@ -110,12 +110,12 @@ func newShowAllCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "all",
-		Short: "Show all backup records",
-		Long: `Show all backup records (MySQL and PostgreSQL) from the local index.
+		Short: "查询全部备份记录",
+		Long: `从本地索引查询全部 MySQL 和 PostgreSQL 备份记录。
 
-Default output shows the last 5 records in table format.
-Use --last to change the number of records shown.
-Use --json for machine-readable output.`,
+默认以表格显示最近 5 条记录。
+使用 --last 调整显示数量。
+使用 --json 输出机器可读格式。`,
 		Example: `  dbbackupctl show all
   dbbackupctl show all --last 20
   dbbackupctl show all --json`,
@@ -124,8 +124,8 @@ Use --json for machine-readable output.`,
 		},
 	}
 
-	cmd.Flags().IntVar(&last, "last", 5, "Number of records to show")
-	cmd.Flags().BoolVar(&json, "json", false, "Output in JSON format")
+	cmd.Flags().IntVar(&last, "last", 5, "显示记录数量")
+	cmd.Flags().BoolVar(&json, "json", false, "以 JSON 格式输出")
 
 	return cmd
 }
@@ -147,7 +147,7 @@ func runShow(dbType string, last int, job string, jsonOutput bool) error {
 		Limit:  last,
 	})
 	if err != nil {
-		return fmt.Errorf("querying index: %w", err)
+		return fmt.Errorf("查询索引失败: %w", err)
 	}
 
 	// Output as JSON
@@ -162,7 +162,7 @@ func runShow(dbType string, last int, job string, jsonOutput bool) error {
 func printJSON(records []index.BackupRecord) error {
 	data, err := json.MarshalIndent(records, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling JSON: %w", err)
+		return fmt.Errorf("序列化 JSON 失败: %w", err)
 	}
 	fmt.Println(string(data))
 	return nil
@@ -170,7 +170,7 @@ func printJSON(records []index.BackupRecord) error {
 
 func printTable(records []index.BackupRecord) error {
 	if len(records) == 0 {
-		fmt.Println("No backup records found.")
+		fmt.Println("未找到备份记录。")
 		return nil
 	}
 
@@ -178,8 +178,8 @@ func printTable(records []index.BackupRecord) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 
 	// Print header
-	fmt.Fprintf(w, "BACKUP ID\tTYPE\tJOB\tSTATUS\tSTARTED AT\tDURATION\tSIZE\tPATH\n")
-	fmt.Fprintf(w, "----------\t----\t---\t------\t----------\t--------\t----\t----\n")
+	fmt.Fprintf(w, "备份ID\t类型\t环境\t状态\t开始时间\t耗时\t大小\t路径\n")
+	fmt.Fprintf(w, "------\t----\t----\t----\t--------\t----\t----\t----\n")
 
 	// Print records
 	for _, r := range records {

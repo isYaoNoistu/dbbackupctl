@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
+	"github.com/jackc/pgx/v5"
 )
 
 // Inspector handles PostgreSQL inspection operations
@@ -21,22 +21,22 @@ func NewInspector() *Inspector {
 func (i *Inspector) CheckDependency(ctx context.Context) error {
 	// Check pg_dump
 	if _, err := exec.LookPath("pg_dump"); err != nil {
-		return fmt.Errorf("pg_dump not found in PATH: %w", err)
+		return fmt.Errorf("PATH 中未找到 pg_dump: %w", err)
 	}
 
 	// Check pg_restore
 	if _, err := exec.LookPath("pg_restore"); err != nil {
-		return fmt.Errorf("pg_restore not found in PATH: %w", err)
+		return fmt.Errorf("PATH 中未找到 pg_restore: %w", err)
 	}
 
 	// Check pg_dumpall
 	if _, err := exec.LookPath("pg_dumpall"); err != nil {
-		return fmt.Errorf("pg_dumpall not found in PATH: %w", err)
+		return fmt.Errorf("PATH 中未找到 pg_dumpall: %w", err)
 	}
 
 	// Check psql
 	if _, err := exec.LookPath("psql"); err != nil {
-		return fmt.Errorf("psql not found in PATH: %w", err)
+		return fmt.Errorf("PATH 中未找到 psql: %w", err)
 	}
 
 	return nil
@@ -47,12 +47,12 @@ func (i *Inspector) CheckConnection(ctx context.Context, job engine.JobConfig) e
 	connStr := buildConnStr(job)
 	conn, err := pgx.Connect(ctx, connStr)
 	if err != nil {
-		return fmt.Errorf("connecting to PostgreSQL: %w", err)
+		return fmt.Errorf("连接 PostgreSQL 失败: %w", err)
 	}
 	defer conn.Close(ctx)
 
 	if err := conn.Ping(ctx); err != nil {
-		return fmt.Errorf("pinging PostgreSQL: %w", err)
+		return fmt.Errorf("PostgreSQL Ping 失败: %w", err)
 	}
 
 	return nil
@@ -63,7 +63,7 @@ func (i *Inspector) GetDatabases(ctx context.Context, job engine.JobConfig, incl
 	connStr := buildConnStr(job)
 	conn, err := pgx.Connect(ctx, connStr)
 	if err != nil {
-		return nil, fmt.Errorf("connecting to PostgreSQL: %w", err)
+		return nil, fmt.Errorf("连接 PostgreSQL 失败: %w", err)
 	}
 	defer conn.Close(ctx)
 
@@ -86,7 +86,7 @@ func (i *Inspector) GetDatabases(ctx context.Context, job engine.JobConfig, incl
 
 	rows, err := conn.Query(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("querying databases: %w", err)
+		return nil, fmt.Errorf("查询数据库列表失败: %w", err)
 	}
 	defer rows.Close()
 
@@ -94,7 +94,7 @@ func (i *Inspector) GetDatabases(ctx context.Context, job engine.JobConfig, incl
 	for rows.Next() {
 		var db string
 		if err := rows.Scan(&db); err != nil {
-			return nil, fmt.Errorf("scanning database: %w", err)
+			return nil, fmt.Errorf("读取数据库列表失败: %w", err)
 		}
 		databases = append(databases, db)
 	}
@@ -107,7 +107,7 @@ func (i *Inspector) EstimateSize(ctx context.Context, job engine.JobConfig, data
 	connStr := buildConnStr(job)
 	conn, err := pgx.Connect(ctx, connStr)
 	if err != nil {
-		return 0, fmt.Errorf("connecting to PostgreSQL: %w", err)
+		return 0, fmt.Errorf("连接 PostgreSQL 失败: %w", err)
 	}
 	defer conn.Close(ctx)
 
@@ -116,7 +116,7 @@ func (i *Inspector) EstimateSize(ctx context.Context, job engine.JobConfig, data
 		var size int64
 		err := conn.QueryRow(ctx, "SELECT pg_database_size($1)", db).Scan(&size)
 		if err != nil {
-			return 0, fmt.Errorf("estimating size for %s: %w", db, err)
+			return 0, fmt.Errorf("估算 %s 大小失败: %w", db, err)
 		}
 		totalSize += size
 	}

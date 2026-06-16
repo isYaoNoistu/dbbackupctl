@@ -17,18 +17,18 @@ func NewValidator() *Validator {
 // Validate validates the entire configuration
 func (v *Validator) Validate(cfg *Config) error {
 	if err := v.validateCore(&cfg.Core); err != nil {
-		return fmt.Errorf("core config: %w", err)
+		return fmt.Errorf("核心配置错误: %w", err)
 	}
 
 	if cfg.MySQL.Enabled {
 		if err := v.validateMySQL(&cfg.MySQL); err != nil {
-			return fmt.Errorf("mysql config: %w", err)
+			return fmt.Errorf("MySQL 配置错误: %w", err)
 		}
 	}
 
 	if cfg.PostgreSQL.Enabled {
 		if err := v.validatePostgreSQL(&cfg.PostgreSQL); err != nil {
-			return fmt.Errorf("postgresql config: %w", err)
+			return fmt.Errorf("PostgreSQL 配置错误: %w", err)
 		}
 	}
 
@@ -49,7 +49,7 @@ func (v *Validator) validateCore(cfg *CoreConfig) error {
 
 	for name, dir := range dirs {
 		if dir != "" && !filepath.IsAbs(dir) {
-			return fmt.Errorf("%s must be an absolute path: %s", name, dir)
+			return fmt.Errorf("%s 必须是绝对路径: %s", name, dir)
 		}
 	}
 
@@ -61,51 +61,51 @@ func (v *Validator) validateCore(cfg *CoreConfig) error {
 	// Validate compress type
 	validCompressTypes := map[string]bool{"zstd": true, "gzip": true, "none": true}
 	if cfg.CompressType != "" && !validCompressTypes[cfg.CompressType] {
-		return fmt.Errorf("DBB_COMPRESS_TYPE invalid: %s (must be zstd, gzip, or none)", cfg.CompressType)
+		return fmt.Errorf("DBB_COMPRESS_TYPE 非法: %s（必须是 zstd、gzip 或 none）", cfg.CompressType)
 	}
 
 	// Validate checksum type
 	if cfg.ChecksumType != "" && cfg.ChecksumType != "sha256" {
-		return fmt.Errorf("DBB_CHECKSUM_TYPE invalid: %s (must be sha256)", cfg.ChecksumType)
+		return fmt.Errorf("DBB_CHECKSUM_TYPE 非法: %s（必须是 sha256）", cfg.ChecksumType)
 	}
 
 	// Validate compress level
 	if cfg.CompressType == "zstd" && cfg.CompressLevel != 0 && (cfg.CompressLevel < 1 || cfg.CompressLevel > 22) {
-		return fmt.Errorf("DBB_COMPRESS_LEVEL invalid for zstd: %d (must be 1-22)", cfg.CompressLevel)
+		return fmt.Errorf("DBB_COMPRESS_LEVEL 对 zstd 非法: %d（必须是 1-22）", cfg.CompressLevel)
 	}
 	if cfg.CompressType == "gzip" && cfg.CompressLevel != 0 && (cfg.CompressLevel < 1 || cfg.CompressLevel > 9) {
-		return fmt.Errorf("DBB_COMPRESS_LEVEL invalid for gzip: %d (must be 1-9)", cfg.CompressLevel)
+		return fmt.Errorf("DBB_COMPRESS_LEVEL 对 gzip 非法: %d（必须是 1-9）", cfg.CompressLevel)
 	}
 
 	// Validate retention settings
 	if cfg.RetentionKeepLast < 0 {
-		return fmt.Errorf("DBB_RETENTION_KEEP_LAST must be >= 0")
+		return fmt.Errorf("DBB_RETENTION_KEEP_LAST 必须大于等于 0")
 	}
 	if cfg.RetentionKeepDays < 0 {
-		return fmt.Errorf("DBB_RETENTION_KEEP_DAYS must be >= 0")
+		return fmt.Errorf("DBB_RETENTION_KEEP_DAYS 必须大于等于 0")
 	}
 	if cfg.RetentionKeepFailedLast < 0 {
-		return fmt.Errorf("DBB_RETENTION_KEEP_FAILED_LAST must be >= 0")
+		return fmt.Errorf("DBB_RETENTION_KEEP_FAILED_LAST 必须大于等于 0")
 	}
 
 	// Validate size fields can be parsed
 	if cfg.RetentionMaxTotalSize != "" {
 		if _, err := ParseSize(cfg.RetentionMaxTotalSize); err != nil {
-			return fmt.Errorf("DBB_RETENTION_MAX_TOTAL_SIZE invalid: %w", err)
+			return fmt.Errorf("DBB_RETENTION_MAX_TOTAL_SIZE 非法: %w", err)
 		}
 	}
 	if cfg.DiskMinFreeSize != "" {
 		if _, err := ParseSize(cfg.DiskMinFreeSize); err != nil {
-			return fmt.Errorf("DBB_DISK_MIN_FREE_SIZE invalid: %w", err)
+			return fmt.Errorf("DBB_DISK_MIN_FREE_SIZE 非法: %w", err)
 		}
 	}
 
 	// Validate percentage fields
 	if cfg.DiskMinFreePercent < 0 || cfg.DiskMinFreePercent > 100 {
-		return fmt.Errorf("DBB_DISK_MIN_FREE_PERCENT must be 0-100")
+		return fmt.Errorf("DBB_DISK_MIN_FREE_PERCENT 必须在 0-100 之间")
 	}
 	if cfg.DiskEstimateBufferPercent < 0 || cfg.DiskEstimateBufferPercent > 100 {
-		return fmt.Errorf("DBB_DISK_ESTIMATE_BUFFER_PERCENT must be 0-100")
+		return fmt.Errorf("DBB_DISK_ESTIMATE_BUFFER_PERCENT 必须在 0-100 之间")
 	}
 
 	return nil
@@ -114,13 +114,13 @@ func (v *Validator) validateCore(cfg *CoreConfig) error {
 // validateMySQL validates MySQL configuration
 func (v *Validator) validateMySQL(cfg *MySQLConfig) error {
 	if len(cfg.Jobs) == 0 {
-		return fmt.Errorf("MYSQL_ENABLED=true but MYSQL_JOBS is empty")
+		return fmt.Errorf("MYSQL_ENABLED=true 但 MYSQL_JOBS 为空")
 	}
 
 	for _, jobName := range cfg.Jobs {
 		job, ok := cfg.JobConfigs[jobName]
 		if !ok {
-			return fmt.Errorf("job %s not found in configuration", jobName)
+			return fmt.Errorf("配置中未找到环境 %s", jobName)
 		}
 
 		if err := v.validateMySQLJob(jobName, &job); err != nil {
@@ -134,49 +134,49 @@ func (v *Validator) validateMySQL(cfg *MySQLConfig) error {
 // validateMySQLJob validates a MySQL job configuration
 func (v *Validator) validateMySQLJob(name string, cfg *MySQLJobConfig) error {
 	if cfg.Host == "" {
-		return fmt.Errorf("job %s: MYSQL_%s_HOST is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: MYSQL_%s_HOST 必填", name, strings.ToUpper(name))
 	}
 	if cfg.Port <= 0 || cfg.Port > 65535 {
-		return fmt.Errorf("job %s: MYSQL_%s_PORT must be 1-65535", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: MYSQL_%s_PORT 必须在 1-65535 之间", name, strings.ToUpper(name))
 	}
 	if cfg.User == "" {
-		return fmt.Errorf("job %s: MYSQL_%s_USER is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: MYSQL_%s_USER 必填", name, strings.ToUpper(name))
 	}
 	if cfg.PasswordEnv == "" {
-		return fmt.Errorf("job %s: MYSQL_%s_PASSWORD_ENV is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: MYSQL_%s_PASSWORD_ENV 必填", name, strings.ToUpper(name))
 	}
 	if len(cfg.Databases) == 0 {
-		return fmt.Errorf("job %s: MYSQL_%s_DATABASES is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: MYSQL_%s_DATABASES 必填", name, strings.ToUpper(name))
 	}
 	if cfg.BackupDir == "" {
-		return fmt.Errorf("job %s: MYSQL_%s_BACKUP_DIR is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: MYSQL_%s_BACKUP_DIR 必填", name, strings.ToUpper(name))
 	}
 
 	// Validate backup dir is absolute path
 	if !filepath.IsAbs(cfg.BackupDir) {
-		return fmt.Errorf("job %s: MYSQL_%s_BACKUP_DIR must be absolute path", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: MYSQL_%s_BACKUP_DIR 必须是绝对路径", name, strings.ToUpper(name))
 	}
 
 	// Validate backup dir is not a dangerous path
 	if err := v.validateBackupDir(cfg.BackupDir); err != nil {
-		return fmt.Errorf("job %s: %w", name, err)
+		return fmt.Errorf("环境 %s: %w", name, err)
 	}
 
 	// Validate backup mode
 	if cfg.BackupMode != "" && cfg.BackupMode != "logical" {
-		return fmt.Errorf("job %s: MYSQL_%s_BACKUP_MODE must be logical", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: MYSQL_%s_BACKUP_MODE 必须是 logical", name, strings.ToUpper(name))
 	}
 
 	// Validate output mode
 	if cfg.OutputMode != "" && cfg.OutputMode != "per_database" {
-		return fmt.Errorf("job %s: MYSQL_%s_OUTPUT_MODE must be per_database", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: MYSQL_%s_OUTPUT_MODE 必须是 per_database", name, strings.ToUpper(name))
 	}
 
 	// Validate set_gtid_purged
 	if cfg.SetGtidPurged != "" {
 		validGtid := map[string]bool{"OFF": true, "ON": true, "AUTO": true}
 		if !validGtid[cfg.SetGtidPurged] {
-			return fmt.Errorf("job %s: MYSQL_%s_SET_GTID_PURGED must be OFF, ON, or AUTO", name, strings.ToUpper(name))
+			return fmt.Errorf("环境 %s: MYSQL_%s_SET_GTID_PURGED 必须是 OFF、ON 或 AUTO", name, strings.ToUpper(name))
 		}
 	}
 
@@ -186,13 +186,13 @@ func (v *Validator) validateMySQLJob(name string, cfg *MySQLJobConfig) error {
 // validatePostgreSQL validates PostgreSQL configuration
 func (v *Validator) validatePostgreSQL(cfg *PostgreSQLConfig) error {
 	if len(cfg.Jobs) == 0 {
-		return fmt.Errorf("POSTGRES_ENABLED=true but POSTGRES_JOBS is empty")
+		return fmt.Errorf("POSTGRES_ENABLED=true 但 POSTGRES_JOBS 为空")
 	}
 
 	for _, jobName := range cfg.Jobs {
 		job, ok := cfg.JobConfigs[jobName]
 		if !ok {
-			return fmt.Errorf("job %s not found in configuration", jobName)
+			return fmt.Errorf("配置中未找到环境 %s", jobName)
 		}
 
 		if err := v.validatePostgreSQLJob(jobName, &job); err != nil {
@@ -206,38 +206,41 @@ func (v *Validator) validatePostgreSQL(cfg *PostgreSQLConfig) error {
 // validatePostgreSQLJob validates a PostgreSQL job configuration
 func (v *Validator) validatePostgreSQLJob(name string, cfg *PostgreSQLJobConfig) error {
 	if cfg.Host == "" {
-		return fmt.Errorf("job %s: POSTGRES_%s_HOST is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: POSTGRES_%s_HOST 必填", name, strings.ToUpper(name))
 	}
 	if cfg.Port <= 0 || cfg.Port > 65535 {
-		return fmt.Errorf("job %s: POSTGRES_%s_PORT must be 1-65535", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: POSTGRES_%s_PORT 必须在 1-65535 之间", name, strings.ToUpper(name))
 	}
 	if cfg.User == "" {
-		return fmt.Errorf("job %s: POSTGRES_%s_USER is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: POSTGRES_%s_USER 必填", name, strings.ToUpper(name))
 	}
 	if cfg.PasswordEnv == "" {
-		return fmt.Errorf("job %s: POSTGRES_%s_PASSWORD_ENV is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: POSTGRES_%s_PASSWORD_ENV 必填", name, strings.ToUpper(name))
 	}
 	if len(cfg.Databases) == 0 {
-		return fmt.Errorf("job %s: POSTGRES_%s_DATABASES is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: POSTGRES_%s_DATABASES 必填", name, strings.ToUpper(name))
 	}
 	if cfg.BackupDir == "" {
-		return fmt.Errorf("job %s: POSTGRES_%s_BACKUP_DIR is required", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: POSTGRES_%s_BACKUP_DIR 必填", name, strings.ToUpper(name))
 	}
 
 	// Validate backup dir is absolute path
 	if !filepath.IsAbs(cfg.BackupDir) {
-		return fmt.Errorf("job %s: POSTGRES_%s_BACKUP_DIR must be absolute path", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: POSTGRES_%s_BACKUP_DIR 必须是绝对路径", name, strings.ToUpper(name))
 	}
 
 	// Validate backup dir is not a dangerous path
 	if err := v.validateBackupDir(cfg.BackupDir); err != nil {
-		return fmt.Errorf("job %s: %w", name, err)
+		return fmt.Errorf("环境 %s: %w", name, err)
 	}
 
 	// Validate dump format
-	validFormats := map[string]bool{"custom": true, "plain": true, "directory": true, "tar": true}
+	validFormats := map[string]bool{"custom": true, "plain": true, "tar": true}
 	if cfg.DumpFormat != "" && !validFormats[cfg.DumpFormat] {
-		return fmt.Errorf("job %s: POSTGRES_%s_DUMP_FORMAT must be custom, plain, directory, or tar", name, strings.ToUpper(name))
+		if cfg.DumpFormat == "directory" {
+			return fmt.Errorf("环境 %s: v1 流式模式不支持 directory 格式", name)
+		}
+		return fmt.Errorf("环境 %s: POSTGRES_%s_DUMP_FORMAT 必须是 custom、plain 或 tar", name, strings.ToUpper(name))
 	}
 
 	// Validate sslmode
@@ -246,7 +249,7 @@ func (v *Validator) validatePostgreSQLJob(name string, cfg *PostgreSQLJobConfig)
 		"verify-full": true, "prefer": true, "allow": true,
 	}
 	if cfg.SSLMode != "" && !validSSLModes[cfg.SSLMode] {
-		return fmt.Errorf("job %s: POSTGRES_%s_SSLMODE must be disable, require, verify-ca, verify-full, prefer, or allow", name, strings.ToUpper(name))
+		return fmt.Errorf("环境 %s: POSTGRES_%s_SSLMODE 必须是 disable、require、verify-ca、verify-full、prefer 或 allow", name, strings.ToUpper(name))
 	}
 
 	return nil
@@ -265,14 +268,14 @@ func (v *Validator) validateBackupDir(dir string) error {
 	dangerousPaths := []string{"/", "/data", "/tmp", "/var", "/etc", "/usr", "/home", "/root"}
 	for _, dangerous := range dangerousPaths {
 		if cleaned == dangerous {
-			return fmt.Errorf("backup_dir cannot be a dangerous path: %s", dir)
+			return fmt.Errorf("backup_dir 不能是危险路径: %s", dir)
 		}
 	}
 
 	// Check if path is too short (must have at least 4 levels)
 	parts := strings.Split(strings.TrimPrefix(cleaned, "/"), "/")
 	if len(parts) < 3 {
-		return fmt.Errorf("backup_dir path is too short: %s (must have at least 3 levels)", dir)
+		return fmt.Errorf("backup_dir 路径过短: %s（至少需要 3 级目录）", dir)
 	}
 
 	return nil
@@ -290,7 +293,7 @@ func ParseSize(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	_, err := fmt.Sscanf(s, "%d%s", &size, &unit)
 	if err != nil {
-		return 0, fmt.Errorf("invalid size format: %s", s)
+		return 0, fmt.Errorf("大小格式非法: %s", s)
 	}
 
 	unit = strings.ToUpper(unit)
@@ -304,6 +307,6 @@ func ParseSize(s string) (int64, error) {
 	case "B", "":
 		return size, nil
 	default:
-		return 0, fmt.Errorf("unknown size unit: %s", unit)
+		return 0, fmt.Errorf("未知大小单位: %s", unit)
 	}
 }

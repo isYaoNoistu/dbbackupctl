@@ -27,26 +27,26 @@ func (g *Guard) CheckDiskSpace(backupDir string, estimatedSize int64) error {
 	// Get disk usage
 	usage, err := GetDiskUsage(backupDir)
 	if err != nil {
-		return fmt.Errorf("getting disk usage: %w", err)
+		return fmt.Errorf("获取磁盘使用情况失败: %w", err)
 	}
 
 	// Check minimum free space
 	if usage.Free < g.minFreeSize {
-		return fmt.Errorf("insufficient disk space: free %s, required %s",
+		return fmt.Errorf("磁盘空间不足: 剩余 %s，要求 %s",
 			FormatBytes(usage.Free), FormatBytes(g.minFreeSize))
 	}
 
 	// Check free percentage
 	freePercent := float64(usage.Free) / float64(usage.Total) * 100
 	if freePercent < float64(g.minFreePercent) {
-		return fmt.Errorf("insufficient disk space: %.1f%% free, required %d%%",
+		return fmt.Errorf("磁盘空间不足: 剩余 %.1f%%，要求 %d%%",
 			freePercent, g.minFreePercent)
 	}
 
 	// Check estimated size with buffer
 	requiredSize := estimatedSize * int64(100+g.estimateBuffer) / 100
 	if usage.Free < requiredSize {
-		return fmt.Errorf("insufficient disk space for backup: free %s, estimated required %s (with %d%% buffer)",
+		return fmt.Errorf("备份所需磁盘空间不足: 剩余 %s，估算需要 %s（含 %d%% 缓冲）",
 			FormatBytes(usage.Free), FormatBytes(requiredSize), g.estimateBuffer)
 	}
 

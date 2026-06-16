@@ -38,7 +38,7 @@ func (b *Backuper) Backup(ctx context.Context, job engine.JobConfig, target engi
 
 	// Create backup directory
 	if err := os.MkdirAll(target.BackupDir, 0755); err != nil {
-		return nil, fmt.Errorf("creating backup directory: %w", err)
+		return nil, fmt.Errorf("创建备份目录失败: %w", err)
 	}
 
 	// Backup each database
@@ -83,38 +83,43 @@ func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, tar
 	if target.Compression.Enabled && comp.Type != compress.CompressionNone {
 		// Create pipeline: mysqldump | compressor
 		cmdName, cmdArgs := comp.CompressCommand()
-		compressArgs := append(cmdArgs, "-o", outputFile)
-		compressCmd := exec.CommandContext(ctx, cmdName, compressArgs...)
+		compressCmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
 
 		pipe, err := dumpCmd.StdoutPipe()
 		if err != nil {
-			return nil, fmt.Errorf("creating pipe: %w", err)
+			return nil, fmt.Errorf("创建管道失败: %w", err)
 		}
 		compressCmd.Stdin = pipe
+		outFile, err := os.Create(outputFile)
+		if err != nil {
+			return nil, fmt.Errorf("创建输出文件失败: %w", err)
+		}
+		defer outFile.Close()
+		compressCmd.Stdout = outFile
 		compressStderr, _ := compressCmd.StderrPipe()
 
 		if err := compressCmd.Start(); err != nil {
-			return nil, fmt.Errorf("starting compressor: %w", err)
+			return nil, fmt.Errorf("启动压缩器失败: %w", err)
 		}
 		if err := dumpCmd.Start(); err != nil {
-			return nil, fmt.Errorf("starting mysqldump: %w", err)
+			return nil, fmt.Errorf("启动 mysqldump 失败: %w", err)
 		}
 
 		if err := dumpCmd.Wait(); err != nil {
 			buf := make([]byte, 1024)
 			n, _ := dumpStderr.Read(buf)
-			return nil, fmt.Errorf("mysqldump failed: %s", string(buf[:n]))
+			return nil, fmt.Errorf("mysqldump 执行失败: %s", string(buf[:n]))
 		}
 		if err := compressCmd.Wait(); err != nil {
 			buf := make([]byte, 1024)
 			n, _ := compressStderr.Read(buf)
-			return nil, fmt.Errorf("compressor failed: %s", string(buf[:n]))
+			return nil, fmt.Errorf("压缩器执行失败: %s", string(buf[:n]))
 		}
 	} else {
 		// No compression - write directly to file
 		outFile, err := os.Create(outputFile)
 		if err != nil {
-			return nil, fmt.Errorf("creating output file: %w", err)
+			return nil, fmt.Errorf("创建输出文件失败: %w", err)
 		}
 		dumpCmd.Stdout = outFile
 
@@ -122,7 +127,7 @@ func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, tar
 			outFile.Close()
 			buf := make([]byte, 1024)
 			n, _ := dumpStderr.Read(buf)
-			return nil, fmt.Errorf("mysqldump failed: %s", string(buf[:n]))
+			return nil, fmt.Errorf("mysqldump 执行失败: %s", string(buf[:n]))
 		}
 		outFile.Close()
 	}
@@ -130,7 +135,7 @@ func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, tar
 	// Get file info
 	fileInfo, err := os.Stat(outputFile)
 	if err != nil {
-		return nil, fmt.Errorf("getting file info: %w", err)
+		return nil, fmt.Errorf("获取文件信息失败: %w", err)
 	}
 
 	compressionType := "none"

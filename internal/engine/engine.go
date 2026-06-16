@@ -42,11 +42,11 @@ type JobConfig struct {
 
 // BackupTarget holds backup target information
 type BackupTarget struct {
-	BackupDir    string
-	Databases    []string
-	Timestamp    string
-	BackupID     string
-	Compression  CompressionConfig
+	BackupDir   string
+	Databases   []string
+	Timestamp   string
+	BackupID    string
+	Compression CompressionConfig
 }
 
 // CompressionConfig holds compression configuration
@@ -59,15 +59,15 @@ type CompressionConfig struct {
 
 // BackupResult holds backup operation result
 type BackupResult struct {
-	BackupID     string
-	BackupDir    string
-	Databases    []string
-	Artifacts    []Artifact
-	StartedAt    string
-	FinishedAt   string
-	DurationSec  int64
-	Status       string
-	Error        error
+	BackupID    string
+	BackupDir   string
+	Databases   []string
+	Artifacts   []Artifact
+	StartedAt   string
+	FinishedAt  string
+	DurationSec int64
+	Status      string
+	Error       error
 }
 
 // Artifact holds information about a backup artifact
@@ -83,15 +83,15 @@ type Artifact struct {
 
 // BackupRecord holds a backup record from the index
 type BackupRecord struct {
-	BackupID      string `json:"backup_id"`
-	DBType        string `json:"db_type"`
-	Job           string `json:"job"`
-	Status        string `json:"status"`
-	StartedAt     string `json:"started_at"`
-	DurationSec   int64  `json:"duration_seconds"`
-	SizeBytes     int64  `json:"size_bytes"`
-	BackupDir     string `json:"backup_dir"`
-	Manifest      string `json:"manifest"`
+	BackupID    string `json:"backup_id"`
+	DBType      string `json:"db_type"`
+	Job         string `json:"job"`
+	Status      string `json:"status"`
+	StartedAt   string `json:"started_at"`
+	DurationSec int64  `json:"duration_seconds"`
+	SizeBytes   int64  `json:"size_bytes"`
+	BackupDir   string `json:"backup_dir"`
+	Manifest    string `json:"manifest"`
 }
 
 // RestoreOptions holds restore options
@@ -101,26 +101,27 @@ type RestoreOptions struct {
 	AllowOverwrite bool
 	Execute        bool
 	JobConfig      JobConfig
+	IncludeGlobals bool
 }
 
 // RestorePlan holds restore plan information
 type RestorePlan struct {
-	BackupID     string
-	SourceDB     string
-	TargetDB     string
-	BackupDir    string
-	Artifacts    []Artifact
-	ChecksumOK   bool
-	Commands     []string
+	BackupID   string
+	SourceDB   string
+	TargetDB   string
+	BackupDir  string
+	Artifacts  []Artifact
+	ChecksumOK bool
+	Commands   []string
 }
 
 // RestoreResult holds restore operation result
 type RestoreResult struct {
-	BackupID     string
-	TargetDB     string
-	StartedAt    string
-	FinishedAt   string
-	DurationSec  int64
-	Status       string
-	Error        error
+	BackupID    string
+	TargetDB    string
+	StartedAt   string
+	FinishedAt  string
+	DurationSec int64
+	Status      string
+	Error       error
 }

@@ -19,13 +19,13 @@ type Policy struct {
 
 // BackupEntry holds information about a backup for retention
 type BackupEntry struct {
-	Path       string
-	BackupID   string
-	Job        string
-	DBType     string
-	Status     string
-	StartedAt  time.Time
-	SizeBytes  int64
+	Path      string
+	BackupID  string
+	Job       string
+	DBType    string
+	Status    string
+	StartedAt time.Time
+	SizeBytes int64
 }
 
 // Manager handles retention policy enforcement
@@ -45,7 +45,7 @@ func (m *Manager) GetBackupsToDelete(backupDir string, dbType, job string) ([]Ba
 	// Scan backup directory
 	entries, err := m.scanBackups(backupDir, dbType, job)
 	if err != nil {
-		return nil, fmt.Errorf("scanning backups: %w", err)
+		return nil, fmt.Errorf("扫描备份失败: %w", err)
 	}
 
 	if len(entries) == 0 {
@@ -156,7 +156,7 @@ func (m *Manager) scanBackups(backupDir string, dbType, job string) ([]BackupEnt
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("walking backup directory: %w", err)
+		return nil, fmt.Errorf("遍历备份目录失败: %w", err)
 	}
 
 	return entries, nil
@@ -186,10 +186,10 @@ func (m *Manager) readManifest(manifestPath string, dbType, job string) (*Backup
 
 	// Filter by dbType and job
 	if dbType != "" && manifest.DBType != dbType {
-		return nil, fmt.Errorf("db type mismatch")
+		return nil, fmt.Errorf("数据库类型不匹配")
 	}
 	if job != "" && manifest.Job != job {
-		return nil, fmt.Errorf("job mismatch")
+		return nil, fmt.Errorf("环境不匹配")
 	}
 
 	// Calculate total size

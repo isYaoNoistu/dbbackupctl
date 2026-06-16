@@ -17,13 +17,13 @@ func NewBackupID(dbType, job string, t time.Time) string {
 func ConvertMySQLJob(cfg *configenv.Config, jobName string) (engine.JobConfig, engine.BackupTarget, error) {
 	job, ok := cfg.MySQL.JobConfigs[jobName]
 	if !ok {
-		return engine.JobConfig{}, engine.BackupTarget{}, fmt.Errorf("mysql job %s not found", jobName)
+		return engine.JobConfig{}, engine.BackupTarget{}, fmt.Errorf("未找到 MySQL 环境 %s", jobName)
 	}
 
 	// Resolve password
 	password, err := ResolveMySQLPassword(cfg, jobName, false)
 	if err != nil {
-		return engine.JobConfig{}, engine.BackupTarget{}, fmt.Errorf("resolving password: %w", err)
+		return engine.JobConfig{}, engine.BackupTarget{}, fmt.Errorf("解析密码失败: %w", err)
 	}
 
 	// Build engine job config
@@ -34,17 +34,17 @@ func ConvertMySQLJob(cfg *configenv.Config, jobName string) (engine.JobConfig, e
 		User:     job.User,
 		Password: password,
 		Options: map[string]interface{}{
-			"single_transaction":    job.SingleTransaction,
-			"quick":                 job.Quick,
-			"routines":              job.Routines,
-			"events":                job.Events,
-			"triggers":              job.Triggers,
-			"hex_blob":              job.HexBlob,
-			"set_gtid_purged":       job.SetGtidPurged,
-			"column_statistics":     job.ColumnStatistics,
-			"lock_tables":           job.LockTables,
-			"dump_create_database":  job.DumpCreateDatabase,
-			"output_mode":           job.OutputMode,
+			"single_transaction":   job.SingleTransaction,
+			"quick":                job.Quick,
+			"routines":             job.Routines,
+			"events":               job.Events,
+			"triggers":             job.Triggers,
+			"hex_blob":             job.HexBlob,
+			"set_gtid_purged":      job.SetGtidPurged,
+			"column_statistics":    job.ColumnStatistics,
+			"lock_tables":          job.LockTables,
+			"dump_create_database": job.DumpCreateDatabase,
+			"output_mode":          job.OutputMode,
 		},
 	}
 
@@ -73,13 +73,13 @@ func ConvertMySQLJob(cfg *configenv.Config, jobName string) (engine.JobConfig, e
 func ConvertPostgreSQLJob(cfg *configenv.Config, jobName string) (engine.JobConfig, engine.BackupTarget, error) {
 	job, ok := cfg.PostgreSQL.JobConfigs[jobName]
 	if !ok {
-		return engine.JobConfig{}, engine.BackupTarget{}, fmt.Errorf("postgresql job %s not found", jobName)
+		return engine.JobConfig{}, engine.BackupTarget{}, fmt.Errorf("未找到 PostgreSQL 环境 %s", jobName)
 	}
 
 	// Resolve password
 	password, err := ResolvePostgreSQLPassword(cfg, jobName, false)
 	if err != nil {
-		return engine.JobConfig{}, engine.BackupTarget{}, fmt.Errorf("resolving password: %w", err)
+		return engine.JobConfig{}, engine.BackupTarget{}, fmt.Errorf("解析密码失败: %w", err)
 	}
 
 	// Build engine job config
@@ -90,14 +90,14 @@ func ConvertPostgreSQLJob(cfg *configenv.Config, jobName string) (engine.JobConf
 		User:     job.User,
 		Password: password,
 		Options: map[string]interface{}{
-			"sslmode":                job.SSLMode,
-			"dump_format":            job.DumpFormat,
-			"include_globals":        job.IncludeGlobals,
-			"no_owner":               job.NoOwner,
-			"no_privileges":          job.NoPrivileges,
-			"jobs":                   job.Jobs,
-			"include_template_dbs":   job.IncludeTemplateDatabases,
-			"include_postgres_db":    job.IncludePostgresDatabase,
+			"sslmode":              job.SSLMode,
+			"dump_format":          job.DumpFormat,
+			"include_globals":      job.IncludeGlobals,
+			"no_owner":             job.NoOwner,
+			"no_privileges":        job.NoPrivileges,
+			"jobs":                 job.Jobs,
+			"include_template_dbs": job.IncludeTemplateDatabases,
+			"include_postgres_db":  job.IncludePostgresDatabase,
 		},
 	}
 
@@ -126,13 +126,13 @@ func ConvertPostgreSQLJob(cfg *configenv.Config, jobName string) (engine.JobConf
 func ConvertMySQLRestoreJob(cfg *configenv.Config, jobName string) (engine.JobConfig, error) {
 	job, ok := cfg.MySQL.JobConfigs[jobName]
 	if !ok {
-		return engine.JobConfig{}, fmt.Errorf("mysql job %s not found", jobName)
+		return engine.JobConfig{}, fmt.Errorf("未找到 MySQL 环境 %s", jobName)
 	}
 
 	// Resolve restore password
 	password, err := ResolveMySQLPassword(cfg, jobName, true)
 	if err != nil {
-		return engine.JobConfig{}, fmt.Errorf("resolving restore password: %w", err)
+		return engine.JobConfig{}, fmt.Errorf("解析恢复密码失败: %w", err)
 	}
 
 	// Use restore connection if configured
@@ -162,13 +162,13 @@ func ConvertMySQLRestoreJob(cfg *configenv.Config, jobName string) (engine.JobCo
 func ConvertPostgreSQLRestoreJob(cfg *configenv.Config, jobName string) (engine.JobConfig, error) {
 	job, ok := cfg.PostgreSQL.JobConfigs[jobName]
 	if !ok {
-		return engine.JobConfig{}, fmt.Errorf("postgresql job %s not found", jobName)
+		return engine.JobConfig{}, fmt.Errorf("未找到 PostgreSQL 环境 %s", jobName)
 	}
 
 	// Resolve restore password
 	password, err := ResolvePostgreSQLPassword(cfg, jobName, true)
 	if err != nil {
-		return engine.JobConfig{}, fmt.Errorf("resolving restore password: %w", err)
+		return engine.JobConfig{}, fmt.Errorf("解析恢复密码失败: %w", err)
 	}
 
 	// Use restore connection if configured
@@ -196,7 +196,8 @@ func ConvertPostgreSQLRestoreJob(cfg *configenv.Config, jobName string) (engine.
 		User:     user,
 		Password: password,
 		Options: map[string]interface{}{
-			"sslmode": sslMode,
+			"sslmode":     sslMode,
+			"dump_format": job.DumpFormat,
 		},
 	}, nil
 }

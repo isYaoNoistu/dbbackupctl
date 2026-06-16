@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/isYaoNoistu/dbbackupctl/internal/checksum"
+	"github.com/isYaoNoistu/dbbackupctl/internal/compress"
 	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
 	"github.com/isYaoNoistu/dbbackupctl/internal/manifest"
 )
@@ -30,32 +32,37 @@ func (r *Restorer) RestorePlan(ctx context.Context, record engine.BackupRecord, 
 	// Read manifest to get artifact information
 	manifestPath := filepath.Join(record.BackupDir, "manifest.json")
 	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("manifest not found: %s", manifestPath)
+		return nil, fmt.Errorf("未找到 manifest: %s", manifestPath)
 	}
 
 	// Read manifest
 	mw := manifest.NewWriter()
 	m, err := mw.Read(record.BackupDir)
 	if err != nil {
-		return nil, fmt.Errorf("reading manifest: %w", err)
+		return nil, fmt.Errorf("读取 manifest 失败: %w", err)
 	}
 
 	// Verify manifest status
 	if m.Status != "success" {
-		return nil, fmt.Errorf("backup %s failed, cannot restore", record.BackupID)
+		return nil, fmt.Errorf("备份 %s 状态为失败，不能恢复", record.BackupID)
 	}
 
 	// Build plan
 	plan := &engine.RestorePlan{
-		BackupID:  record.BackupID,
-		SourceDB:  m.Job,
-		TargetDB:  opt.TargetDB,
-		BackupDir: record.BackupDir,
+		BackupID:   record.BackupID,
+		SourceDB:   opt.SourceDB,
+		TargetDB:   opt.TargetDB,
+		BackupDir:  record.BackupDir,
 		ChecksumOK: true,
 	}
 
+	artifacts, err := r.selectedArtifacts(record.BackupDir, m, opt.SourceDB)
+	if err != nil {
+		return nil, err
+	}
+
 	// Verify checksum for each artifact
-	for _, a := range m.Artifacts {
+	for _, a := range artifacts {
 		if a.Checksum != "" {
 			ok, err := checksum.VerifyFileSHA256(a.Path, a.Checksum)
 			if err != nil {
@@ -82,22 +89,14 @@ func (r *Restorer) RestorePlan(ctx context.Context, record engine.BackupRecord, 
 			Checksum:     a.Checksum,
 		})
 
-		// Build restore command using job config
-		host := "127.0.0.1"
-		port := 3306
-		user := "root"
-		if opt.JobConfig.Host != "" {
-			host = opt.JobConfig.Host
-		}
-		if opt.JobConfig.Port != 0 {
-			port = opt.JobConfig.Port
-		}
-		if opt.JobConfig.User != "" {
-			user = opt.JobConfig.User
+		host, port, user, _, err := mysqlRestoreConnection(opt.JobConfig)
+		if err != nil {
+			return nil, err
 		}
 
-		cmd := fmt.Sprintf("zstd -dc %s | mysql -h %s -P %d -u %s %s",
-			a.Path, host, port, user, opt.TargetDB)
+		cmdName, cmdArgs := decompressCommand(a)
+		cmd := fmt.Sprintf("%s %s | mysql -h %s -P %d -u %s %s",
+			cmdName, strings.Join(cmdArgs, " "), host, port, user, opt.TargetDB)
 		plan.Commands = append(plan.Commands, cmd)
 	}
 
@@ -128,19 +127,27 @@ func (r *Restorer) Restore(ctx context.Context, record engine.BackupRecord, opt 
 
 	// Verify checksum
 	if opt.JobConfig.Options["skip_checksum"] != true {
-		for _, a := range m.Artifacts {
+		artifacts, err := r.selectedArtifacts(record.BackupDir, m, opt.SourceDB)
+		if err != nil {
+			result.Status = "failed"
+			result.Error = err
+			result.FinishedAt = time.Now().Format(time.RFC3339)
+			result.DurationSec = int64(time.Since(startTime).Seconds())
+			return result, err
+		}
+		for _, a := range artifacts {
 			if a.Checksum != "" {
 				ok, err := checksum.VerifyFileSHA256(a.Path, a.Checksum)
 				if err != nil {
 					result.Status = "failed"
-					result.Error = fmt.Errorf("checksum verification failed for %s: %w", a.Path, err)
+					result.Error = fmt.Errorf("校验 %s 的 checksum 失败: %w", a.Path, err)
 					result.FinishedAt = time.Now().Format(time.RFC3339)
 					result.DurationSec = int64(time.Since(startTime).Seconds())
 					return result, result.Error
 				}
 				if !ok {
 					result.Status = "failed"
-					result.Error = fmt.Errorf("checksum mismatch for %s", a.Path)
+					result.Error = fmt.Errorf("%s 的 checksum 不匹配", a.Path)
 					result.FinishedAt = time.Now().Format(time.RFC3339)
 					result.DurationSec = int64(time.Since(startTime).Seconds())
 					return result, result.Error
@@ -150,21 +157,22 @@ func (r *Restorer) Restore(ctx context.Context, record engine.BackupRecord, opt 
 	}
 
 	// Get connection info from job config
-	host := "127.0.0.1"
-	port := 3306
-	user := "root"
-	password := ""
-	if opt.JobConfig.Host != "" {
-		host = opt.JobConfig.Host
+	host, port, user, password, err := mysqlRestoreConnection(opt.JobConfig)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = err
+		result.FinishedAt = time.Now().Format(time.RFC3339)
+		result.DurationSec = int64(time.Since(startTime).Seconds())
+		return result, err
 	}
-	if opt.JobConfig.Port != 0 {
-		port = opt.JobConfig.Port
-	}
-	if opt.JobConfig.User != "" {
-		user = opt.JobConfig.User
-	}
-	if opt.JobConfig.Password != "" {
-		password = opt.JobConfig.Password
+
+	artifacts, err := r.selectedArtifacts(record.BackupDir, m, opt.SourceDB)
+	if err != nil {
+		result.Status = "failed"
+		result.Error = err
+		result.FinishedAt = time.Now().Format(time.RFC3339)
+		result.DurationSec = int64(time.Since(startTime).Seconds())
+		return result, err
 	}
 
 	// Create target database
@@ -177,7 +185,7 @@ func (r *Restorer) Restore(ctx context.Context, record engine.BackupRecord, opt 
 	}
 
 	// Restore each artifact
-	for _, a := range m.Artifacts {
+	for _, a := range artifacts {
 		if a.Database == "__globals__" {
 			continue // Skip globals for MySQL
 		}
@@ -211,7 +219,7 @@ func (r *Restorer) createDatabase(ctx context.Context, host string, port int, us
 
 	output, err := createCmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("creating database: %s", string(output))
+		return fmt.Errorf("创建数据库失败: %s", string(output))
 	}
 
 	return nil
@@ -219,7 +227,8 @@ func (r *Restorer) createDatabase(ctx context.Context, host string, port int, us
 
 // restoreDatabase restores a single database
 func (r *Restorer) restoreDatabase(ctx context.Context, sourceFile, host string, port int, user, password, targetDB string) error {
-	zstdCmd := exec.CommandContext(ctx, "zstd", "-dc", sourceFile)
+	cmdName, cmdArgs := decompressCommand(manifest.Artifact{Path: sourceFile, Compression: compressionFromPath(sourceFile)})
+	decompressCmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
 	mysqlCmd := exec.CommandContext(ctx, "mysql",
 		"-h", host,
 		"-P", fmt.Sprintf("%d", port),
@@ -231,33 +240,105 @@ func (r *Restorer) restoreDatabase(ctx context.Context, sourceFile, host string,
 		mysqlCmd.Env = append(os.Environ(), "MYSQL_PWD="+password)
 	}
 
-	pipe, err := zstdCmd.StdoutPipe()
+	pipe, err := decompressCmd.StdoutPipe()
 	if err != nil {
-		return fmt.Errorf("creating pipe: %w", err)
+		return fmt.Errorf("创建管道失败: %w", err)
 	}
 	mysqlCmd.Stdin = pipe
 
-	zstdStderr, _ := zstdCmd.StderrPipe()
+	decompressStderr, _ := decompressCmd.StderrPipe()
 	mysqlStderr, _ := mysqlCmd.StderrPipe()
 
 	if err := mysqlCmd.Start(); err != nil {
-		return fmt.Errorf("starting mysql: %w", err)
+		return fmt.Errorf("启动 mysql 失败: %w", err)
 	}
-	if err := zstdCmd.Start(); err != nil {
-		return fmt.Errorf("starting zstd: %w", err)
+	if err := decompressCmd.Start(); err != nil {
+		return fmt.Errorf("启动解压器失败: %w", err)
 	}
 
-	if err := zstdCmd.Wait(); err != nil {
+	if err := decompressCmd.Wait(); err != nil {
 		buf := make([]byte, 4096)
-		n, _ := zstdStderr.Read(buf)
-		return fmt.Errorf("zstd failed: %s", string(buf[:n]))
+		n, _ := decompressStderr.Read(buf)
+		return fmt.Errorf("解压器执行失败: %s", string(buf[:n]))
 	}
 
 	if err := mysqlCmd.Wait(); err != nil {
 		buf := make([]byte, 4096)
 		n, _ := mysqlStderr.Read(buf)
-		return fmt.Errorf("mysql failed: %s", string(buf[:n]))
+		return fmt.Errorf("mysql 执行失败: %s", string(buf[:n]))
 	}
 
 	return nil
+}
+
+func (r *Restorer) selectedArtifacts(backupDir string, m *manifest.Manifest, sourceDB string) ([]manifest.Artifact, error) {
+	var artifacts []manifest.Artifact
+	for _, a := range m.Artifacts {
+		if a.Database == "__globals__" {
+			continue
+		}
+		if sourceDB != "" && a.Database != sourceDB {
+			continue
+		}
+		if err := validateArtifactPath(backupDir, a.Path); err != nil {
+			return nil, err
+		}
+		artifacts = append(artifacts, a)
+	}
+	if len(artifacts) == 0 {
+		return nil, fmt.Errorf("未找到源数据库 %q 的可恢复备份文件", sourceDB)
+	}
+	return artifacts, nil
+}
+
+func validateArtifactPath(backupDir, artifactPath string) error {
+	backupAbs, err := filepath.Abs(backupDir)
+	if err != nil {
+		return fmt.Errorf("解析备份目录失败: %w", err)
+	}
+	artifactAbs, err := filepath.Abs(artifactPath)
+	if err != nil {
+		return fmt.Errorf("解析备份文件路径失败: %w", err)
+	}
+	rel, err := filepath.Rel(backupAbs, artifactAbs)
+	if err != nil {
+		return fmt.Errorf("检查备份文件路径失败: %w", err)
+	}
+	if rel == "." || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return fmt.Errorf("备份文件路径越过备份目录: %s", artifactPath)
+	}
+	return nil
+}
+
+func decompressCommand(a manifest.Artifact) (string, []string) {
+	compressionType := a.Compression
+	if compressionType == "" {
+		compressionType = compressionFromPath(a.Path)
+	}
+	c := compress.NewCompressor(compressionType, 0)
+	return c.DecompressCommand(a.Path)
+}
+
+func compressionFromPath(path string) string {
+	switch {
+	case strings.HasSuffix(path, ".zst"):
+		return "zstd"
+	case strings.HasSuffix(path, ".gz"):
+		return "gzip"
+	default:
+		return "none"
+	}
+}
+
+func mysqlRestoreConnection(job engine.JobConfig) (string, int, string, string, error) {
+	if job.Host == "" {
+		return "", 0, "", "", fmt.Errorf("恢复 host 必填")
+	}
+	if job.Port == 0 {
+		return "", 0, "", "", fmt.Errorf("恢复 port 必填")
+	}
+	if job.User == "" {
+		return "", 0, "", "", fmt.Errorf("恢复 user 必填")
+	}
+	return job.Host, job.Port, job.User, job.Password, nil
 }

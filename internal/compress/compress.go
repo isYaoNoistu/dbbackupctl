@@ -1,6 +1,7 @@
 package compress
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -53,13 +54,13 @@ func (c *Compressor) CompressCommand() (string, []string) {
 		if level == 0 {
 			level = 3
 		}
-		return "zstd", []string{"-", fmt.Sprintf("-%d", level)}
+		return "zstd", []string{"-c", fmt.Sprintf("-%d", level)}
 	case CompressionGzip:
 		level := c.Level
 		if level == 0 {
 			level = 6
 		}
-		return "gzip", []string{"-", fmt.Sprintf("-%d", level)}
+		return "gzip", []string{"-c", fmt.Sprintf("-%d", level)}
 	default:
 		return "cat", nil
 	}
@@ -85,12 +86,20 @@ func (c *Compressor) CompressFile(inputPath, outputPath string) error {
 	}
 
 	cmdName, args := c.CompressCommand()
+	args = append(args, inputPath)
 	cmd := exec.Command(cmdName, args...)
-	cmd.Args = append(cmd.Args, "-o", outputPath, inputPath)
 
-	output, err := cmd.CombinedOutput()
+	outFile, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("compression failed: %s", string(output))
+		return fmt.Errorf("创建输出文件失败: %w", err)
+	}
+	defer outFile.Close()
+	cmd.Stdout = outFile
+
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("压缩失败: %s", stderr.String())
 	}
 
 	return nil
@@ -107,14 +116,14 @@ func (c *Compressor) DecompressFile(inputPath, outputPath string) error {
 
 	outFile, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("creating output file: %w", err)
+		return fmt.Errorf("创建输出文件失败: %w", err)
 	}
 	defer outFile.Close()
 
 	cmd.Stdout = outFile
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("decompression failed: %s", string(output))
+		return fmt.Errorf("解压失败: %s", string(output))
 	}
 
 	return nil

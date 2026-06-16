@@ -17,18 +17,18 @@ type BackupRecord struct {
 
 // Keeper handles backup retention policies
 type Keeper struct {
-	KeepLast      int
-	KeepDays      int
-	MaxTotalSize  int64
+	KeepLast       int
+	KeepDays       int
+	MaxTotalSize   int64
 	KeepFailedLast int
 }
 
 // NewKeeper creates a new retention keeper
 func NewKeeper(keepLast, keepDays int, maxSize int64, keepFailedLast int) *Keeper {
 	return &Keeper{
-		KeepLast:      keepLast,
-		KeepDays:      keepDays,
-		MaxTotalSize:  maxSize,
+		KeepLast:       keepLast,
+		KeepDays:       keepDays,
+		MaxTotalSize:   maxSize,
 		KeepFailedLast: keepFailedLast,
 	}
 }

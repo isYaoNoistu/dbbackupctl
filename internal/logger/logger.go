@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/isYaoNoistu/dbbackupctl/internal/shell"
 )
 
 // Level represents log level
@@ -124,10 +126,11 @@ func (l *Logger) Error(msg string, fields map[string]interface{}) {
 
 // log writes a log entry
 func (l *Logger) log(level Level, msg string, fields map[string]interface{}) {
+	fields = redactFields(fields)
 	entry := LogEntry{
 		Timestamp: time.Now().Format(time.RFC3339),
 		Level:     level.String(),
-		Message:   msg,
+		Message:   shell.RedactString(msg),
 		Fields:    fields,
 	}
 
@@ -143,4 +146,22 @@ func (l *Logger) log(level Level, msg string, fields map[string]interface{}) {
 		}
 		fmt.Fprintln(l.output)
 	}
+}
+
+func redactFields(fields map[string]interface{}) map[string]interface{} {
+	if len(fields) == 0 {
+		return fields
+	}
+	redacted := make(map[string]interface{}, len(fields))
+	for k, v := range fields {
+		switch value := v.(type) {
+		case string:
+			redacted[k] = shell.RedactString(value)
+		case []string:
+			redacted[k] = shell.RedactArgs(value)
+		default:
+			redacted[k] = v
+		}
+	}
+	return redacted
 }

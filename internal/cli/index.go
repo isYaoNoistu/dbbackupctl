@@ -1,11 +1,9 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/isYaoNoistu/dbbackupctl/internal/index"
 	"github.com/isYaoNoistu/dbbackupctl/internal/manifest"
@@ -15,14 +13,14 @@ import (
 func newIndexCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "index",
-		Short: "Manage local backup index",
-		Long: `Manage the local backup index (backup_records.jsonl).
+		Short: "管理本地备份索引",
+		Long: `管理本地备份索引 backup_records.jsonl。
 
-Available subcommands:
-  verify  - Verify index integrity
-  rebuild - Rebuild index from backup directories
+子命令：
+  verify  校验索引完整性
+  rebuild 从备份目录重建索引
 
-The index file is located at:
+默认索引位置：
   /data/dbbackupctl/index/backup_records.jsonl`,
 		Example: `  dbbackupctl index verify
   dbbackupctl index rebuild
@@ -40,14 +38,14 @@ The index file is located at:
 func newIndexVerifyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "verify",
-		Short: "Verify index integrity",
-		Long: `Verify the integrity of the backup index.
+		Short: "校验索引完整性",
+		Long: `校验备份索引完整性。
 
-This command checks:
-  - Index file exists and is readable
-  - Each record has required fields
-  - Referenced manifest files exist
-  - Referenced backup directories exist`,
+检查内容：
+  - 索引文件可读
+  - 每条记录包含必要字段
+  - 引用的 manifest.json 存在
+  - 引用的备份目录存在`,
 		Example: `  dbbackupctl index verify`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runIndexVerify()
@@ -62,18 +60,18 @@ func newIndexRebuildCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "rebuild",
-		Short: "Rebuild index from backup directories",
-		Long: `Rebuild the backup index by scanning backup directories.
+		Short: "从备份目录重建索引",
+		Long: `扫描备份目录并重建本地备份索引。
 
-This command:
-  - Scans all backup directories under backup_root
-  - Reads manifest.json from each backup
-  - Rebuilds backup_records.jsonl
+该命令会：
+  - 扫描 backup_root 下的所有备份目录
+  - 读取每个备份的 manifest.json
+  - 重建 backup_records.jsonl
 
-Use this when:
-  - The index file is corrupted or missing
-  - Backup directories were manually moved
-  - After a backup_root migration`,
+适用场景：
+  - 索引文件损坏或丢失
+  - 手工移动过备份目录
+  - 迁移过备份根目录`,
 		Example: `  dbbackupctl index rebuild
   dbbackupctl index rebuild --backup-root /data/backup`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -81,7 +79,7 @@ Use this when:
 		},
 	}
 
-	cmd.Flags().StringVar(&backupRoot, "backup-root", "", "Backup root directory (default: from config)")
+	cmd.Flags().StringVar(&backupRoot, "backup-root", "", "备份根目录，默认读取配置")
 
 	return cmd
 }
@@ -99,17 +97,17 @@ func runIndexVerify() error {
 	// Query all records
 	records, err := store.Query(index.QueryFilter{Limit: 10000})
 	if err != nil {
-		return fmt.Errorf("reading index: %w", err)
+		return fmt.Errorf("读取索引失败: %w", err)
 	}
 
-	fmt.Printf("Found %d records in index\n", len(records))
+	fmt.Printf("索引中共有 %d 条记录\n", len(records))
 
 	// Verify each record
 	issues := 0
 	for _, r := range records {
 		// Check required fields
 		if r.BackupID == "" {
-			fmt.Printf("  ISSUE: Record missing backup_id\n")
+			fmt.Printf("  问题：记录缺少 backup_id\n")
 			issues++
 			continue
 		}
@@ -117,14 +115,14 @@ func runIndexVerify() error {
 		// Check manifest exists
 		manifestPath := filepath.Join(r.BackupDir, "manifest.json")
 		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
-			fmt.Printf("  ISSUE: %s - manifest not found at %s\n", r.BackupID, manifestPath)
+			fmt.Printf("  问题：%s - 未找到 manifest：%s\n", r.BackupID, manifestPath)
 			issues++
 			continue
 		}
 
 		// Check backup dir exists
 		if _, err := os.Stat(r.BackupDir); os.IsNotExist(err) {
-			fmt.Printf("  ISSUE: %s - backup dir not found at %s\n", r.BackupID, r.BackupDir)
+			fmt.Printf("  问题：%s - 未找到备份目录：%s\n", r.BackupID, r.BackupDir)
 			issues++
 			continue
 		}
@@ -133,25 +131,25 @@ func runIndexVerify() error {
 		mw := manifest.NewWriter()
 		m, err := mw.Read(r.BackupDir)
 		if err != nil {
-			fmt.Printf("  ISSUE: %s - cannot read manifest: %v\n", r.BackupID, err)
+			fmt.Printf("  问题：%s - 无法读取 manifest：%v\n", r.BackupID, err)
 			issues++
 			continue
 		}
 
 		// Verify manifest matches index
 		if m.BackupID != r.BackupID {
-			fmt.Printf("  ISSUE: %s - backup_id mismatch with manifest\n", r.BackupID)
+			fmt.Printf("  问题：%s - backup_id 与 manifest 不一致\n", r.BackupID)
 			issues++
 			continue
 		}
 
-		fmt.Printf("  OK: %s\n", r.BackupID)
+		fmt.Printf("  通过：%s\n", r.BackupID)
 	}
 
 	if issues > 0 {
-		fmt.Printf("\nFound %d issues. Run 'dbbackupctl index rebuild' to fix.\n", issues)
+		fmt.Printf("\n发现 %d 个问题。可执行 'dbbackupctl index rebuild' 修复。\n", issues)
 	} else {
-		fmt.Printf("\nAll records verified successfully.\n")
+		fmt.Printf("\n所有记录校验通过。\n")
 	}
 
 	return nil
@@ -172,104 +170,20 @@ func runIndexRebuild(backupRoot string) error {
 		}
 	}
 
-	fmt.Printf("Scanning backup directories under: %s\n", backupRoot)
+	fmt.Printf("正在扫描备份目录：%s\n", backupRoot)
 
-	// Find all manifest.json files
-	var records []index.BackupRecord
-	err = filepath.Walk(backupRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip errors
-		}
-		if info.Name() == "manifest.json" {
-			// Read manifest
-			dir := filepath.Dir(path)
-			mw := manifest.NewWriter()
-			m, err := mw.Read(dir)
-			if err != nil {
-				fmt.Printf("  WARN: Cannot read manifest at %s: %v\n", path, err)
-				return nil
-			}
+	store := index.NewStore(cfg.Core.IndexFile)
+	if err := store.Rebuild(backupRoot); err != nil {
+		return fmt.Errorf("重建索引失败: %w", err)
+	}
 
-			// Create record
-			record := index.BackupRecord{
-				BackupID:  m.BackupID,
-				DBType:    m.DBType,
-				Job:       m.Job,
-				Status:    m.Status,
-				StartedAt: m.StartedAt,
-				DurationSec: m.DurationSec,
-				BackupDir: m.BackupDir,
-				Manifest:  path,
-			}
-
-			// Calculate total size
-			for _, a := range m.Artifacts {
-				record.SizeBytes += a.SizeBytes
-			}
-
-			records = append(records, record)
-			fmt.Printf("  Found: %s (%s)\n", m.BackupID, m.Status)
-		}
-		return nil
-	})
+	records, err := store.Query(index.QueryFilter{Limit: 100000})
 	if err != nil {
-		return fmt.Errorf("scanning backup directories: %w", err)
+		return fmt.Errorf("读取重建后的索引失败: %w", err)
 	}
 
-	fmt.Printf("\nFound %d backups\n", len(records))
-
-	// Write new index file
-	indexFile := cfg.Core.IndexFile
-	if indexFile == "" {
-		indexFile = "/data/dbbackupctl/index/backup_records.jsonl"
-	}
-
-	// Create backup of old index
-	if _, err := os.Stat(indexFile); err == nil {
-		backupFile := indexFile + ".bak"
-		if err := copyFile(indexFile, backupFile); err != nil {
-			fmt.Printf("  WARN: Cannot backup old index: %v\n", err)
-		} else {
-			fmt.Printf("  Backed up old index to: %s\n", backupFile)
-		}
-	}
-
-	// Write new index
-	if err := os.MkdirAll(filepath.Dir(indexFile), 0750); err != nil {
-		return fmt.Errorf("creating index directory: %w", err)
-	}
-
-	f, err := os.Create(indexFile)
-	if err != nil {
-		return fmt.Errorf("creating index file: %w", err)
-	}
-	defer f.Close()
-
-	for _, r := range records {
-		data, err := json.Marshal(r)
-		if err != nil {
-			continue
-		}
-		data = append(data, '\n')
-		f.Write(data)
-	}
-
-	fmt.Printf("\nIndex rebuilt successfully: %s\n", indexFile)
-	fmt.Printf("Total records: %d\n", len(records))
+	fmt.Printf("\n索引重建完成：%s\n", cfg.Core.IndexFile)
+	fmt.Printf("记录总数：%d\n", len(records))
 
 	return nil
-}
-
-// copyFile copies a file
-func copyFile(src, dst string) error {
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, 0640)
-}
-
-func init() {
-	// Suppress unused import warning
-	_ = strings.Contains
 }

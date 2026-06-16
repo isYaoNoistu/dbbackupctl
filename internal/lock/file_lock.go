@@ -41,28 +41,28 @@ func (m *Manager) Acquire(dbType, job string, force bool) error {
 			if force {
 				return m.removeLock(lockFile)
 			}
-			return fmt.Errorf("lock exists but cannot be read: %s", lockFile)
+			return fmt.Errorf("锁文件已存在但无法读取: %s", lockFile)
 		}
 
 		// Check if process is still running
 		if isProcessRunning(lockInfo.PID) {
-			return fmt.Errorf("lock conflict: job %s/%s is already running (PID: %d, started: %s)",
+			return fmt.Errorf("锁冲突: 任务 %s/%s 正在运行（PID: %d，启动时间: %s）",
 				dbType, job, lockInfo.PID, lockInfo.StartedAt)
 		}
 
 		// Process is not running, lock is stale
 		if force {
 			if err := m.removeLock(lockFile); err != nil {
-				return fmt.Errorf("removing stale lock: %w", err)
+				return fmt.Errorf("删除陈旧锁失败: %w", err)
 			}
 		} else {
-			return fmt.Errorf("stale lock found (PID %d not running), use --force to clean", lockInfo.PID)
+			return fmt.Errorf("发现陈旧锁（PID %d 未运行），请使用 --force 清理", lockInfo.PID)
 		}
 	}
 
 	// Create lock directory if it doesn't exist
 	if err := os.MkdirAll(m.lockDir, 0755); err != nil {
-		return fmt.Errorf("creating lock directory: %w", err)
+		return fmt.Errorf("创建锁目录失败: %w", err)
 	}
 
 	// Write lock file
@@ -75,11 +75,11 @@ func (m *Manager) Acquire(dbType, job string, force bool) error {
 
 	data, err := json.Marshal(lockInfo)
 	if err != nil {
-		return fmt.Errorf("marshaling lock info: %w", err)
+		return fmt.Errorf("序列化锁信息失败: %w", err)
 	}
 
 	if err := os.WriteFile(lockFile, data, 0640); err != nil {
-		return fmt.Errorf("writing lock file: %w", err)
+		return fmt.Errorf("写入锁文件失败: %w", err)
 	}
 
 	return nil
@@ -103,7 +103,7 @@ func (m *Manager) Release(dbType, job string) error {
 
 	// Check if it's our lock
 	if lockInfo.PID != os.Getpid() {
-		return fmt.Errorf("lock belongs to another process (PID: %d)", lockInfo.PID)
+		return fmt.Errorf("锁属于其他进程（PID: %d）", lockInfo.PID)
 	}
 
 	return m.removeLock(lockFile)

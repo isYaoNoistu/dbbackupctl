@@ -41,12 +41,12 @@ func (c *Checker) checkBinary(report *CheckReport, name, binary string) {
 	path, err := exec.LookPath(binary)
 	if err != nil {
 		c.addItem(report, name, CheckFail,
-			fmt.Sprintf("%s not found in PATH", binary),
-			"Please install the required tool")
+			fmt.Sprintf("PATH 中未找到 %s", binary),
+			"请安装对应依赖工具")
 		return
 	}
 	c.addItem(report, name, CheckOK,
-		fmt.Sprintf("%s found at %s", binary, path), "")
+		fmt.Sprintf("已找到 %s：%s", binary, path), "")
 }
 
 // checkDirectories checks required directories
@@ -71,15 +71,15 @@ func (c *Checker) checkDirectories(report *CheckReport) {
 		if _, err := exec.Command("test", "-d", d.path).Output(); err != nil {
 			if d.require {
 				c.addItem(report, fmt.Sprintf("directory.%s", d.name), CheckFail,
-					fmt.Sprintf("Directory does not exist: %s", d.path),
-					"Run: mkdir -p "+d.path)
+					fmt.Sprintf("目录不存在: %s", d.path),
+					"执行: mkdir -p "+d.path)
 			} else {
 				c.addItem(report, fmt.Sprintf("directory.%s", d.name), CheckWarn,
-					fmt.Sprintf("Directory does not exist: %s", d.path), "")
+					fmt.Sprintf("目录不存在: %s", d.path), "")
 			}
 		} else {
 			c.addItem(report, fmt.Sprintf("directory.%s", d.name), CheckOK,
-				fmt.Sprintf("Directory exists: %s", d.path), "")
+				fmt.Sprintf("目录存在: %s", d.path), "")
 		}
 	}
 }

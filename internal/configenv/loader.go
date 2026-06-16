@@ -35,22 +35,22 @@ func (l *Loader) Load() (*Config, error) {
 
 	// Load core.env
 	if err := l.loadCore(&cfg.Core); err != nil {
-		return nil, fmt.Errorf("loading core.env: %w", err)
+		return nil, fmt.Errorf("加载 core.env 失败: %w", err)
 	}
 
 	// Load mysql.env
 	if err := l.loadMySQL(&cfg.MySQL); err != nil {
-		return nil, fmt.Errorf("loading mysql.env: %w", err)
+		return nil, fmt.Errorf("加载 mysql.env 失败: %w", err)
 	}
 
 	// Load postgresql.env
 	if err := l.loadPostgreSQL(&cfg.PostgreSQL); err != nil {
-		return nil, fmt.Errorf("loading postgresql.env: %w", err)
+		return nil, fmt.Errorf("加载 postgresql.env 失败: %w", err)
 	}
 
 	// Load secret.env
 	if err := l.loadSecret(&cfg.Secret); err != nil {
-		return nil, fmt.Errorf("loading secret.env: %w", err)
+		return nil, fmt.Errorf("加载 secret.env 失败: %w", err)
 	}
 
 	// Apply defaults
@@ -70,6 +70,7 @@ func (l *Loader) loadCore(cfg *CoreConfig) error {
 	if err != nil {
 		return err
 	}
+	overlayProcessEnv(env)
 
 	// Map environment variables to config
 	mapCoreConfig(cfg, env)
@@ -88,6 +89,7 @@ func (l *Loader) loadMySQL(cfg *MySQLConfig) error {
 	if err != nil {
 		return err
 	}
+	overlayProcessEnv(env)
 
 	// Map environment variables to config
 	mapMySQLConfig(cfg, env)
@@ -106,6 +108,7 @@ func (l *Loader) loadPostgreSQL(cfg *PostgreSQLConfig) error {
 	if err != nil {
 		return err
 	}
+	overlayProcessEnv(env)
 
 	// Map environment variables to config
 	mapPostgreSQLConfig(cfg, env)
@@ -124,6 +127,7 @@ func (l *Loader) loadSecret(cfg *SecretConfig) error {
 	if err != nil {
 		return err
 	}
+	overlayProcessEnv(env)
 
 	// Map environment variables to config
 	mapSecretConfig(cfg, env)
@@ -259,6 +263,9 @@ func mapMySQLConfig(cfg *MySQLConfig, env map[string]string) {
 		if v, ok := env[prefix+"PASSWORD_ENV"]; ok {
 			jobCfg.PasswordEnv = v
 		}
+		if v, ok := env[prefix+"PASSWORD_FILE"]; ok {
+			jobCfg.PasswordFile = v
+		}
 		if v, ok := env[prefix+"DATABASES"]; ok {
 			jobCfg.Databases = parseStringList(v)
 		}
@@ -316,6 +323,9 @@ func mapMySQLConfig(cfg *MySQLConfig, env map[string]string) {
 		if v, ok := env[prefix+"RESTORE_PASSWORD_ENV"]; ok {
 			jobCfg.RestorePasswordEnv = v
 		}
+		if v, ok := env[prefix+"RESTORE_PASSWORD_FILE"]; ok {
+			jobCfg.RestorePasswordFile = v
+		}
 		if v, ok := env[prefix+"RETENTION_KEEP_LAST"]; ok {
 			jobCfg.RetentionKeepLast = parseInt(v, 0)
 		}
@@ -364,6 +374,9 @@ func mapPostgreSQLConfig(cfg *PostgreSQLConfig, env map[string]string) {
 		if v, ok := env[prefix+"PASSWORD_ENV"]; ok {
 			jobCfg.PasswordEnv = v
 		}
+		if v, ok := env[prefix+"PASSWORD_FILE"]; ok {
+			jobCfg.PasswordFile = v
+		}
 		if v, ok := env[prefix+"SSLMODE"]; ok {
 			jobCfg.SSLMode = v
 		}
@@ -408,6 +421,9 @@ func mapPostgreSQLConfig(cfg *PostgreSQLConfig, env map[string]string) {
 		}
 		if v, ok := env[prefix+"RESTORE_PASSWORD_ENV"]; ok {
 			jobCfg.RestorePasswordEnv = v
+		}
+		if v, ok := env[prefix+"RESTORE_PASSWORD_FILE"]; ok {
+			jobCfg.RestorePasswordFile = v
 		}
 		if v, ok := env[prefix+"RESTORE_SSLMODE"]; ok {
 			jobCfg.RestoreSSLMode = v
@@ -537,4 +553,14 @@ func parseStringList(s string) []string {
 		}
 	}
 	return result
+}
+
+func overlayProcessEnv(env map[string]string) {
+	for _, pair := range os.Environ() {
+		key, value, ok := strings.Cut(pair, "=")
+		if !ok || key == "" {
+			continue
+		}
+		env[key] = value
+	}
 }

@@ -38,7 +38,7 @@ func (b *Backuper) Backup(ctx context.Context, job engine.JobConfig, target engi
 
 	// Create backup directory
 	if err := os.MkdirAll(target.BackupDir, 0755); err != nil {
-		return nil, fmt.Errorf("creating backup directory: %w", err)
+		return nil, fmt.Errorf("创建备份目录失败: %w", err)
 	}
 
 	// Build compressor from target compression config
@@ -116,37 +116,42 @@ func (b *Backuper) backupGlobals(ctx context.Context, job engine.JobConfig, targ
 
 	if target.Compression.Enabled && comp.Type != compress.CompressionNone {
 		cmdName, cmdArgs := comp.CompressCommand()
-		compressArgs := append(cmdArgs, "-o", outputFile)
-		compressCmd := exec.CommandContext(ctx, cmdName, compressArgs...)
+		compressCmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
 
 		pipe, err := dumpCmd.StdoutPipe()
 		if err != nil {
-			return fmt.Errorf("creating pipe: %w", err)
+			return fmt.Errorf("创建管道失败: %w", err)
 		}
 		compressCmd.Stdin = pipe
+		outFile, err := os.Create(outputFile)
+		if err != nil {
+			return fmt.Errorf("创建输出文件失败: %w", err)
+		}
+		defer outFile.Close()
+		compressCmd.Stdout = outFile
 		compressStderr, _ := compressCmd.StderrPipe()
 
 		if err := compressCmd.Start(); err != nil {
-			return fmt.Errorf("starting compressor: %w", err)
+			return fmt.Errorf("启动压缩器失败: %w", err)
 		}
 		if err := dumpCmd.Start(); err != nil {
-			return fmt.Errorf("starting pg_dumpall: %w", err)
+			return fmt.Errorf("启动 pg_dumpall 失败: %w", err)
 		}
 
 		if err := dumpCmd.Wait(); err != nil {
 			buf := make([]byte, 1024)
 			n, _ := dumpStderr.Read(buf)
-			return fmt.Errorf("pg_dumpall failed: %s", string(buf[:n]))
+			return fmt.Errorf("pg_dumpall 执行失败: %s", string(buf[:n]))
 		}
 		if err := compressCmd.Wait(); err != nil {
 			buf := make([]byte, 1024)
 			n, _ := compressStderr.Read(buf)
-			return fmt.Errorf("compressor failed: %s", string(buf[:n]))
+			return fmt.Errorf("压缩器执行失败: %s", string(buf[:n]))
 		}
 	} else {
 		outFile, err := os.Create(outputFile)
 		if err != nil {
-			return fmt.Errorf("creating output file: %w", err)
+			return fmt.Errorf("创建输出文件失败: %w", err)
 		}
 		dumpCmd.Stdout = outFile
 
@@ -154,7 +159,7 @@ func (b *Backuper) backupGlobals(ctx context.Context, job engine.JobConfig, targ
 			outFile.Close()
 			buf := make([]byte, 1024)
 			n, _ := dumpStderr.Read(buf)
-			return fmt.Errorf("pg_dumpall failed: %s", string(buf[:n]))
+			return fmt.Errorf("pg_dumpall 执行失败: %s", string(buf[:n]))
 		}
 		outFile.Close()
 	}
@@ -179,37 +184,42 @@ func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, tar
 
 	if target.Compression.Enabled && comp.Type != compress.CompressionNone {
 		cmdName, cmdArgs := comp.CompressCommand()
-		compressArgs := append(cmdArgs, "-o", outputFile)
-		compressCmd := exec.CommandContext(ctx, cmdName, compressArgs...)
+		compressCmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
 
 		pipe, err := dumpCmd.StdoutPipe()
 		if err != nil {
-			return nil, fmt.Errorf("creating pipe: %w", err)
+			return nil, fmt.Errorf("创建管道失败: %w", err)
 		}
 		compressCmd.Stdin = pipe
+		outFile, err := os.Create(outputFile)
+		if err != nil {
+			return nil, fmt.Errorf("创建输出文件失败: %w", err)
+		}
+		defer outFile.Close()
+		compressCmd.Stdout = outFile
 		compressStderr, _ := compressCmd.StderrPipe()
 
 		if err := compressCmd.Start(); err != nil {
-			return nil, fmt.Errorf("starting compressor: %w", err)
+			return nil, fmt.Errorf("启动压缩器失败: %w", err)
 		}
 		if err := dumpCmd.Start(); err != nil {
-			return nil, fmt.Errorf("starting pg_dump: %w", err)
+			return nil, fmt.Errorf("启动 pg_dump 失败: %w", err)
 		}
 
 		if err := dumpCmd.Wait(); err != nil {
 			buf := make([]byte, 1024)
 			n, _ := dumpStderr.Read(buf)
-			return nil, fmt.Errorf("pg_dump failed: %s", string(buf[:n]))
+			return nil, fmt.Errorf("pg_dump 执行失败: %s", string(buf[:n]))
 		}
 		if err := compressCmd.Wait(); err != nil {
 			buf := make([]byte, 1024)
 			n, _ := compressStderr.Read(buf)
-			return nil, fmt.Errorf("compressor failed: %s", string(buf[:n]))
+			return nil, fmt.Errorf("压缩器执行失败: %s", string(buf[:n]))
 		}
 	} else {
 		outFile, err := os.Create(outputFile)
 		if err != nil {
-			return nil, fmt.Errorf("creating output file: %w", err)
+			return nil, fmt.Errorf("创建输出文件失败: %w", err)
 		}
 		dumpCmd.Stdout = outFile
 
@@ -217,7 +227,7 @@ func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, tar
 			outFile.Close()
 			buf := make([]byte, 1024)
 			n, _ := dumpStderr.Read(buf)
-			return nil, fmt.Errorf("pg_dump failed: %s", string(buf[:n]))
+			return nil, fmt.Errorf("pg_dump 执行失败: %s", string(buf[:n]))
 		}
 		outFile.Close()
 	}
@@ -225,7 +235,7 @@ func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, tar
 	// Get file info
 	fileInfo, err := os.Stat(outputFile)
 	if err != nil {
-		return nil, fmt.Errorf("getting file info: %w", err)
+		return nil, fmt.Errorf("获取文件信息失败: %w", err)
 	}
 
 	compressionType := "none"
@@ -249,8 +259,8 @@ func (b *Backuper) buildDumpArgs(job engine.JobConfig, database string) []string
 		"-p", fmt.Sprintf("%d", job.Port),
 		"-U", job.User,
 		"-d", database,
-		"-F", "c",  // custom format
-		"-Z", "0",  // no compression (we'll use zstd)
+		"-F", "c", // custom format
+		"-Z", "0", // no compression (we'll use zstd)
 		"--no-owner",
 		"--no-privileges",
 	}

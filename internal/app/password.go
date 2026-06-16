@@ -27,40 +27,48 @@ func ResolvePassword(secret configenv.SecretConfig, envName, filePath string) (s
 	if filePath != "" {
 		b, err := os.ReadFile(filePath)
 		if err != nil {
-			return "", fmt.Errorf("reading password file %s: %w", filePath, err)
+			return "", fmt.Errorf("读取密码文件 %s 失败: %w", filePath, err)
 		}
 		return strings.TrimSpace(string(b)), nil
 	}
 
-	return "", fmt.Errorf("password not found: env=%s file=%s", envName, filePath)
+	return "", fmt.Errorf("未找到密码: env=%s file=%s", envName, filePath)
 }
 
 // ResolveMySQLPassword resolves MySQL password for a job
 func ResolveMySQLPassword(cfg *configenv.Config, jobName string, isRestore bool) (string, error) {
 	job, ok := cfg.MySQL.JobConfigs[jobName]
 	if !ok {
-		return "", fmt.Errorf("mysql job %s not found", jobName)
+		return "", fmt.Errorf("未找到 MySQL 环境 %s", jobName)
 	}
 
 	envName := job.PasswordEnv
+	filePath := job.PasswordFile
 	if isRestore && job.RestorePasswordEnv != "" {
 		envName = job.RestorePasswordEnv
 	}
+	if isRestore && job.RestorePasswordFile != "" {
+		filePath = job.RestorePasswordFile
+	}
 
-	return ResolvePassword(cfg.Secret, envName, "")
+	return ResolvePassword(cfg.Secret, envName, filePath)
 }
 
 // ResolvePostgreSQLPassword resolves PostgreSQL password for a job
 func ResolvePostgreSQLPassword(cfg *configenv.Config, jobName string, isRestore bool) (string, error) {
 	job, ok := cfg.PostgreSQL.JobConfigs[jobName]
 	if !ok {
-		return "", fmt.Errorf("postgresql job %s not found", jobName)
+		return "", fmt.Errorf("未找到 PostgreSQL 环境 %s", jobName)
 	}
 
 	envName := job.PasswordEnv
+	filePath := job.PasswordFile
 	if isRestore && job.RestorePasswordEnv != "" {
 		envName = job.RestorePasswordEnv
 	}
+	if isRestore && job.RestorePasswordFile != "" {
+		filePath = job.RestorePasswordFile
+	}
 
-	return ResolvePassword(cfg.Secret, envName, "")
+	return ResolvePassword(cfg.Secret, envName, filePath)
 }

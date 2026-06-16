@@ -71,13 +71,13 @@ func GetEngine() engine.Engine {
 // ValidateJob validates a PostgreSQL job configuration
 func ValidateJob(job engine.JobConfig) error {
 	if job.Host == "" {
-		return fmt.Errorf("host is required")
+		return fmt.Errorf("host 必填")
 	}
 	if job.Port == 0 {
-		return fmt.Errorf("port is required")
+		return fmt.Errorf("port 必填")
 	}
 	if job.User == "" {
-		return fmt.Errorf("user is required")
+		return fmt.Errorf("user 必填")
 	}
 	return nil
 }

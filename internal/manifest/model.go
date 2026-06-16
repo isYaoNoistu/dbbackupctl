@@ -4,24 +4,24 @@ import "time"
 
 // Manifest holds backup manifest information
 type Manifest struct {
-	Version        string            `json:"version"`
-	BackupID       string            `json:"backup_id"`
-	DBType         string            `json:"db_type"`
-	Job            string            `json:"job"`
-	Status         string            `json:"status"`
-	BackupMode     string            `json:"backup_mode"`
-	StartedAt      time.Time         `json:"started_at"`
-	FinishedAt     time.Time         `json:"finished_at"`
-	DurationSec    int64             `json:"duration_seconds"`
-	Host           string            `json:"host"`
-	Port           int               `json:"port"`
-	User           string            `json:"user"`
-	Databases      []string          `json:"databases"`
-	BackupDir      string            `json:"backup_dir"`
-	Artifacts      []Artifact        `json:"artifacts"`
-	Command        CommandInfo       `json:"command"`
-	Retention      RetentionInfo     `json:"retention"`
-	Error          *ErrorInfo        `json:"error,omitempty"`
+	Version     string        `json:"version"`
+	BackupID    string        `json:"backup_id"`
+	DBType      string        `json:"db_type"`
+	Job         string        `json:"job"`
+	Status      string        `json:"status"`
+	BackupMode  string        `json:"backup_mode"`
+	StartedAt   time.Time     `json:"started_at"`
+	FinishedAt  time.Time     `json:"finished_at"`
+	DurationSec int64         `json:"duration_seconds"`
+	Host        string        `json:"host"`
+	Port        int           `json:"port"`
+	User        string        `json:"user"`
+	Databases   []string      `json:"databases"`
+	BackupDir   string        `json:"backup_dir"`
+	Artifacts   []Artifact    `json:"artifacts"`
+	Command     CommandInfo   `json:"command"`
+	Retention   RetentionInfo `json:"retention"`
+	Error       *ErrorInfo    `json:"error,omitempty"`
 }
 
 // Artifact holds information about a backup artifact
