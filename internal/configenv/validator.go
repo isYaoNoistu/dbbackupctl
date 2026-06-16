@@ -2,6 +2,7 @@ package configenv
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -48,13 +49,13 @@ func (v *Validator) validateCore(cfg *CoreConfig) error {
 	}
 
 	for name, dir := range dirs {
-		if dir != "" && !filepath.IsAbs(dir) {
+		if dir != "" && !isAbsConfigPath(dir) {
 			return fmt.Errorf("%s 必须是绝对路径: %s", name, dir)
 		}
 	}
 
 	// Validate backup root is not a dangerous path
-	if err := v.validateBackupDir(cfg.BackupRoot); err != nil {
+	if err := v.validateBackupDir(cfg.BackupRoot, 2); err != nil {
 		return fmt.Errorf("DBB_BACKUP_ROOT: %w", err)
 	}
 
@@ -153,12 +154,12 @@ func (v *Validator) validateMySQLJob(name string, cfg *MySQLJobConfig) error {
 	}
 
 	// Validate backup dir is absolute path
-	if !filepath.IsAbs(cfg.BackupDir) {
+	if !isAbsConfigPath(cfg.BackupDir) {
 		return fmt.Errorf("环境 %s: MYSQL_%s_BACKUP_DIR 必须是绝对路径", name, strings.ToUpper(name))
 	}
 
 	// Validate backup dir is not a dangerous path
-	if err := v.validateBackupDir(cfg.BackupDir); err != nil {
+	if err := v.validateBackupDir(cfg.BackupDir, 3); err != nil {
 		return fmt.Errorf("环境 %s: %w", name, err)
 	}
 
@@ -225,12 +226,12 @@ func (v *Validator) validatePostgreSQLJob(name string, cfg *PostgreSQLJobConfig)
 	}
 
 	// Validate backup dir is absolute path
-	if !filepath.IsAbs(cfg.BackupDir) {
+	if !isAbsConfigPath(cfg.BackupDir) {
 		return fmt.Errorf("环境 %s: POSTGRES_%s_BACKUP_DIR 必须是绝对路径", name, strings.ToUpper(name))
 	}
 
 	// Validate backup dir is not a dangerous path
-	if err := v.validateBackupDir(cfg.BackupDir); err != nil {
+	if err := v.validateBackupDir(cfg.BackupDir, 3); err != nil {
 		return fmt.Errorf("环境 %s: %w", name, err)
 	}
 
@@ -256,13 +257,12 @@ func (v *Validator) validatePostgreSQLJob(name string, cfg *PostgreSQLJobConfig)
 }
 
 // validateBackupDir validates backup directory is not a dangerous path
-func (v *Validator) validateBackupDir(dir string) error {
+func (v *Validator) validateBackupDir(dir string, minLevels int) error {
 	if dir == "" {
 		return nil
 	}
 
-	// Clean the path
-	cleaned := filepath.Clean(dir)
+	cleaned := cleanConfigPath(dir)
 
 	// Check for dangerous paths
 	dangerousPaths := []string{"/", "/data", "/tmp", "/var", "/etc", "/usr", "/home", "/root"}
@@ -273,12 +273,46 @@ func (v *Validator) validateBackupDir(dir string) error {
 	}
 
 	// Check if path is too short (must have at least 4 levels)
-	parts := strings.Split(strings.TrimPrefix(cleaned, "/"), "/")
-	if len(parts) < 3 {
-		return fmt.Errorf("backup_dir 路径过短: %s（至少需要 3 级目录）", dir)
+	parts := configPathParts(cleaned)
+	if len(parts) < minLevels {
+		return fmt.Errorf("backup_dir 路径过短: %s（至少需要 %d 级目录）", dir, minLevels)
 	}
 
 	return nil
+}
+
+func isAbsConfigPath(p string) bool {
+	return filepath.IsAbs(p) || strings.HasPrefix(p, "/")
+}
+
+func cleanConfigPath(p string) string {
+	if strings.HasPrefix(p, "/") {
+		return path.Clean(p)
+	}
+	return filepath.Clean(p)
+}
+
+func configPathParts(p string) []string {
+	if strings.HasPrefix(p, "/") {
+		return splitNonEmpty(strings.Split(strings.TrimPrefix(p, "/"), "/"))
+	}
+
+	volume := filepath.VolumeName(p)
+	rest := strings.TrimPrefix(p, volume)
+	parts := strings.FieldsFunc(rest, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
+	return splitNonEmpty(parts)
+}
+
+func splitNonEmpty(parts []string) []string {
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 // ParseSize parses size string to bytes

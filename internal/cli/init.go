@@ -14,8 +14,9 @@ var configTemplates embed.FS
 
 func newInitCmd() *cobra.Command {
 	var (
-		configDir string
-		force     bool
+		configDir         string
+		force             bool
+		withDefaultConfig bool
 	)
 
 	cmd := &cobra.Command{
@@ -29,26 +30,34 @@ func newInitCmd() *cobra.Command {
   - /etc/dbbackupctl/postgresql.env.example
   - /etc/dbbackupctl/secret.env.example
 
+加上 --with-default-config 时，会同时从示例模板生成运行时读取的实际配置：
+  - /etc/dbbackupctl/core.env
+  - /etc/dbbackupctl/mysql.env
+  - /etc/dbbackupctl/postgresql.env
+  - /etc/dbbackupctl/secret.env
+
 同时创建数据、备份、日志和锁目录：
   - /data/dbbackupctl
   - /data/backup
   - /var/log/dbbackupctl
   - /var/lock/dbbackupctl`,
 		Example: `  dbbackupctl init
+  dbbackupctl init --with-default-config
   dbbackupctl init --config-dir /etc/dbbackupctl
   dbbackupctl init --force`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInit(configDir, force)
+			return runInit(configDir, force, withDefaultConfig)
 		},
 	}
 
 	cmd.Flags().StringVar(&configDir, "config-dir", "/etc/dbbackupctl", "配置目录路径")
 	cmd.Flags().BoolVar(&force, "force", false, "覆盖已存在的配置模板")
+	cmd.Flags().BoolVar(&withDefaultConfig, "with-default-config", false, "同时创建运行时读取的 .env 配置文件")
 
 	return cmd
 }
 
-func runInit(configDir string, force bool) error {
+func runInit(configDir string, force, withDefaultConfig bool) error {
 	// Define directories to create
 	dirs := []string{
 		configDir,
@@ -71,19 +80,21 @@ func runInit(configDir string, force bool) error {
 
 	// Define config files to create
 	configFiles := []struct {
-		name string
-		src  string
+		exampleName string
+		actualName  string
+		src         string
+		mode        os.FileMode
 	}{
-		{"core.env.example", "configs/core.env.example"},
-		{"mysql.env.example", "configs/mysql.env.example"},
-		{"postgresql.env.example", "configs/postgresql.env.example"},
-		{"secret.env.example", "configs/secret.env.example"},
+		{"core.env.example", "core.env", "configs/core.env.example", 0644},
+		{"mysql.env.example", "mysql.env", "configs/mysql.env.example", 0644},
+		{"postgresql.env.example", "postgresql.env", "configs/postgresql.env.example", 0644},
+		{"secret.env.example", "secret.env", "configs/secret.env.example", 0600},
 	}
 
 	// Create config files
 	fmt.Println("\n正在创建配置模板...")
 	for _, cf := range configFiles {
-		destPath := filepath.Join(configDir, cf.name)
+		destPath := filepath.Join(configDir, cf.exampleName)
 
 		// Check if file exists
 		if _, err := os.Stat(destPath); err == nil && !force {
@@ -102,6 +113,25 @@ func runInit(configDir string, force bool) error {
 			return fmt.Errorf("写入 %s 失败: %w", destPath, err)
 		}
 		fmt.Printf("  已创建: %s\n", destPath)
+	}
+
+	if withDefaultConfig {
+		fmt.Println("\n正在创建运行配置...")
+		for _, cf := range configFiles {
+			destPath := filepath.Join(configDir, cf.actualName)
+			if _, err := os.Stat(destPath); err == nil && !force {
+				fmt.Printf("  已跳过: %s（已存在，使用 --force 可覆盖）\n", destPath)
+				continue
+			}
+			content, err := configTemplates.ReadFile(cf.src)
+			if err != nil {
+				return fmt.Errorf("读取模板 %s 失败: %w", cf.src, err)
+			}
+			if err := os.WriteFile(destPath, content, cf.mode); err != nil {
+				return fmt.Errorf("写入 %s 失败: %w", destPath, err)
+			}
+			fmt.Printf("  已创建: %s\n", destPath)
+		}
 	}
 
 	fmt.Println("\n初始化完成。")
