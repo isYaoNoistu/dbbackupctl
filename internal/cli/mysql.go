@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/app"
-	"github.com/dbbackupctl/dbbackupctl/internal/configenv"
+	"github.com/isYaoNoistu/dbbackupctl/internal/app"
+	"github.com/isYaoNoistu/dbbackupctl/internal/configenv"
 	"github.com/spf13/cobra"
 )
 
@@ -190,9 +190,8 @@ func runMySQLRestore(id, sourceDB, targetDB string, execute, allowOverwrite bool
 }
 
 func loadConfig() (*configenv.Config, error) {
-	// Try default config directory
-	configDir := "/etc/dbbackupctl"
-	loader := configenv.NewLoader(configDir)
+	// Use global config directory
+	loader := configenv.NewLoader(GetConfigDir())
 	cfg, err := loader.Load()
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)

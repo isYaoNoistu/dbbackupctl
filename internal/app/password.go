@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/configenv"
+	"github.com/isYaoNoistu/dbbackupctl/internal/configenv"
 )
 
 // ResolvePassword resolves password from environment or secret config

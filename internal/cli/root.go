@@ -7,9 +7,12 @@ import (
 )
 
 var (
-	version string
-	commit  string
-	date    string
+	version    string
+	commit     string
+	date       string
+	configDir  string
+	logLevel   string
+	jsonOutput bool
 )
 
 // Run initializes and executes the root command
@@ -43,6 +46,11 @@ Features:
 		SilenceUsage: true,
 	}
 
+	// Global flags
+	rootCmd.PersistentFlags().StringVar(&configDir, "config-dir", "/etc/dbbackupctl", "Configuration directory path")
+	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
 	// Add subcommands
 	rootCmd.AddCommand(
 		newInitCmd(),
@@ -68,4 +76,25 @@ func newVersionCmd() *cobra.Command {
 			fmt.Printf("  date:   %s\n", date)
 		},
 	}
+}
+
+// GetConfigDir returns the global config directory
+func GetConfigDir() string {
+	if configDir == "" {
+		return "/etc/dbbackupctl"
+	}
+	return configDir
+}
+
+// GetLogLevel returns the global log level
+func GetLogLevel() string {
+	if logLevel == "" {
+		return "info"
+	}
+	return logLevel
+}
+
+// IsJSONOutput returns whether JSON output is enabled
+func IsJSONOutput() bool {
+	return jsonOutput
 }

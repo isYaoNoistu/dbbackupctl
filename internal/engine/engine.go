@@ -42,10 +42,19 @@ type JobConfig struct {
 
 // BackupTarget holds backup target information
 type BackupTarget struct {
-	BackupDir  string
-	Databases  []string
-	Timestamp  string
-	BackupID   string
+	BackupDir    string
+	Databases    []string
+	Timestamp    string
+	BackupID     string
+	Compression  CompressionConfig
+}
+
+// CompressionConfig holds compression configuration
+type CompressionConfig struct {
+	Enabled bool
+	Type    string // zstd, gzip, none
+	Level   int
+	Threads int
 }
 
 // BackupResult holds backup operation result
@@ -88,8 +97,10 @@ type BackupRecord struct {
 // RestoreOptions holds restore options
 type RestoreOptions struct {
 	TargetDB       string
+	SourceDB       string
 	AllowOverwrite bool
 	Execute        bool
+	JobConfig      JobConfig
 }
 
 // RestorePlan holds restore plan information

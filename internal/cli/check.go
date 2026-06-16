@@ -1,8 +1,14 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"text/tabwriter"
 
+	"github.com/isYaoNoistu/dbbackupctl/internal/checker"
+	"github.com/isYaoNoistu/dbbackupctl/internal/exiterr"
 	"github.com/spf13/cobra"
 )
 
@@ -44,10 +50,72 @@ This command verifies:
 }
 
 func runCheck(mysql, postgresql bool, job string) error {
-	// TODO: Implement check logic
-	fmt.Println("Check command called")
-	fmt.Printf("MySQL: %v\n", mysql)
-	fmt.Printf("PostgreSQL: %v\n", postgresql)
-	fmt.Printf("Job: %s\n", job)
+	// Load configuration
+	cfg, err := loadConfig()
+	if err != nil {
+		// If config loading fails, try to create a basic check report
+		fmt.Fprintf(os.Stderr, "Warning: Cannot load config: %v\n", err)
+		fmt.Println("Check FAILED: Configuration error")
+		return exiterr.New(exiterr.ExitConfig, err)
+	}
+
+	// Create checker
+	ch := checker.NewChecker(cfg, GetConfigDir())
+	ch.CheckMySQL = mysql
+	ch.CheckPg = postgresql
+	ch.JobName = job
+
+	// Run checks
+	report := ch.Run(context.Background())
+
+	// Output as JSON if requested
+	if IsJSONOutput() {
+		return printCheckJSON(report)
+	}
+
+	// Output as table
+	printCheckTable(report)
+
+	// Return error if any check failed
+	if report.HasFailure() {
+		return exiterr.New(exiterr.ExitGeneral, fmt.Errorf("check failed"))
+	}
+
 	return nil
+}
+
+func printCheckJSON(report *checker.CheckReport) error {
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling JSON: %w", err)
+	}
+	fmt.Println(string(data))
+	return nil
+}
+
+func printCheckTable(report *checker.CheckReport) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	// Print header
+	fmt.Fprintf(w, "STATUS\tCHECK\tMESSAGE\n")
+	fmt.Fprintf(w, "------\t-----\t-------\n")
+
+	// Print items
+	for _, item := range report.Items {
+		status := string(item.Status)
+		switch item.Status {
+		case checker.CheckOK:
+			status = "OK"
+		case checker.CheckWarn:
+			status = "WARN"
+		case checker.CheckFail:
+			status = "FAIL"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", status, item.Name, item.Message)
+	}
+
+	w.Flush()
+
+	// Print summary
+	fmt.Printf("\n%s\n", report.Summary())
 }

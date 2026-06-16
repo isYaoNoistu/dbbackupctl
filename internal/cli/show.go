@@ -6,7 +6,7 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/index"
+	"github.com/isYaoNoistu/dbbackupctl/internal/index"
 	"github.com/spf13/cobra"
 )
 

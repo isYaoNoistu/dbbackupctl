@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/dbbackupctl/dbbackupctl/internal/engine"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
 )
 
 // Inspector handles MySQL inspection operations

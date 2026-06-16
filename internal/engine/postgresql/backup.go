@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/engine"
+	"github.com/isYaoNoistu/dbbackupctl/internal/compress"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
 )
 
 // Backuper handles PostgreSQL backup operations
@@ -40,13 +41,40 @@ func (b *Backuper) Backup(ctx context.Context, job engine.JobConfig, target engi
 		return nil, fmt.Errorf("creating backup directory: %w", err)
 	}
 
-	// Backup globals first
-	if err := b.backupGlobals(ctx, job, target); err != nil {
-		result.Status = "failed"
-		result.Error = err
-		result.FinishedAt = time.Now().Format(time.RFC3339)
-		result.DurationSec = int64(time.Since(startTime).Seconds())
-		return result, err
+	// Build compressor from target compression config
+	comp := compress.NewCompressor(target.Compression.Type, target.Compression.Level)
+	ext := comp.Extension()
+
+	// Backup globals if configured
+	includeGlobals := false
+	if v, ok := job.Options["include_globals"]; ok {
+		if b, ok := v.(bool); ok {
+			includeGlobals = b
+		}
+	}
+	if includeGlobals {
+		if err := b.backupGlobals(ctx, job, target); err != nil {
+			result.Status = "failed"
+			result.Error = err
+			result.FinishedAt = time.Now().Format(time.RFC3339)
+			result.DurationSec = int64(time.Since(startTime).Seconds())
+			return result, err
+		}
+		// Add globals artifact
+		globalsFile := filepath.Join(target.BackupDir, "globals.sql"+ext)
+		if fileInfo, err := os.Stat(globalsFile); err == nil {
+			compressionType := "none"
+			if target.Compression.Enabled {
+				compressionType = string(comp.Type)
+			}
+			result.Artifacts = append(result.Artifacts, engine.Artifact{
+				Database:    "__globals__",
+				File:        "globals.sql" + ext,
+				Path:        globalsFile,
+				SizeBytes:   fileInfo.Size(),
+				Compression: compressionType,
+			})
+		}
 	}
 
 	// Backup each database
@@ -70,7 +98,9 @@ func (b *Backuper) Backup(ctx context.Context, job engine.JobConfig, target engi
 
 // backupGlobals backs up global objects (roles, tablespaces)
 func (b *Backuper) backupGlobals(ctx context.Context, job engine.JobConfig, target engine.BackupTarget) error {
-	outputFile := filepath.Join(target.BackupDir, "globals.sql.zst")
+	comp := compress.NewCompressor(target.Compression.Type, target.Compression.Level)
+	ext := comp.Extension()
+	outputFile := filepath.Join(target.BackupDir, "globals.sql"+ext)
 
 	// Build pg_dumpall command for globals
 	dumpArgs := []string{
@@ -80,47 +110,53 @@ func (b *Backuper) backupGlobals(ctx context.Context, job engine.JobConfig, targ
 		"--globals-only",
 	}
 
-	// Build compression command
-	compressArgs := []string{"-T0", "-3", "-o", outputFile}
-
-	// Create pipeline: pg_dumpall | zstd
 	dumpCmd := exec.CommandContext(ctx, "pg_dumpall", dumpArgs...)
-	compressCmd := exec.CommandContext(ctx, "zstd", compressArgs...)
-
-	// Set environment for password
 	dumpCmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", job.Password))
-
-	// Create pipe
-	pipe, err := dumpCmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("creating pipe: %w", err)
-	}
-	compressCmd.Stdin = pipe
-
-	// Capture stderr
 	dumpStderr, _ := dumpCmd.StderrPipe()
-	compressStderr, _ := compressCmd.StderrPipe()
 
-	// Start commands
-	if err := compressCmd.Start(); err != nil {
-		return fmt.Errorf("starting zstd: %w", err)
-	}
-	if err := dumpCmd.Start(); err != nil {
-		return fmt.Errorf("starting pg_dumpall: %w", err)
-	}
+	if target.Compression.Enabled && comp.Type != compress.CompressionNone {
+		cmdName, cmdArgs := comp.CompressCommand()
+		compressArgs := append(cmdArgs, "-o", outputFile)
+		compressCmd := exec.CommandContext(ctx, cmdName, compressArgs...)
 
-	// Wait for pg_dumpall to finish
-	if err := dumpCmd.Wait(); err != nil {
-		buf := make([]byte, 1024)
-		n, _ := dumpStderr.Read(buf)
-		return fmt.Errorf("pg_dumpall failed: %s", string(buf[:n]))
-	}
+		pipe, err := dumpCmd.StdoutPipe()
+		if err != nil {
+			return fmt.Errorf("creating pipe: %w", err)
+		}
+		compressCmd.Stdin = pipe
+		compressStderr, _ := compressCmd.StderrPipe()
 
-	// Wait for zstd to finish
-	if err := compressCmd.Wait(); err != nil {
-		buf := make([]byte, 1024)
-		n, _ := compressStderr.Read(buf)
-		return fmt.Errorf("zstd failed: %s", string(buf[:n]))
+		if err := compressCmd.Start(); err != nil {
+			return fmt.Errorf("starting compressor: %w", err)
+		}
+		if err := dumpCmd.Start(); err != nil {
+			return fmt.Errorf("starting pg_dumpall: %w", err)
+		}
+
+		if err := dumpCmd.Wait(); err != nil {
+			buf := make([]byte, 1024)
+			n, _ := dumpStderr.Read(buf)
+			return fmt.Errorf("pg_dumpall failed: %s", string(buf[:n]))
+		}
+		if err := compressCmd.Wait(); err != nil {
+			buf := make([]byte, 1024)
+			n, _ := compressStderr.Read(buf)
+			return fmt.Errorf("compressor failed: %s", string(buf[:n]))
+		}
+	} else {
+		outFile, err := os.Create(outputFile)
+		if err != nil {
+			return fmt.Errorf("creating output file: %w", err)
+		}
+		dumpCmd.Stdout = outFile
+
+		if err := dumpCmd.Run(); err != nil {
+			outFile.Close()
+			buf := make([]byte, 1024)
+			n, _ := dumpStderr.Read(buf)
+			return fmt.Errorf("pg_dumpall failed: %s", string(buf[:n]))
+		}
+		outFile.Close()
 	}
 
 	return nil
@@ -128,53 +164,62 @@ func (b *Backuper) backupGlobals(ctx context.Context, job engine.JobConfig, targ
 
 // backupDatabase backs up a single database
 func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, target engine.BackupTarget, database string) (*engine.Artifact, error) {
+	comp := compress.NewCompressor(target.Compression.Type, target.Compression.Level)
+	ext := comp.Extension()
+
 	// Build output file path
-	outputFile := filepath.Join(target.BackupDir, database+".dump.zst")
+	outputFile := filepath.Join(target.BackupDir, database+".dump"+ext)
 
 	// Build pg_dump command
 	dumpArgs := b.buildDumpArgs(job, database)
 
-	// Build compression command
-	compressArgs := []string{"-T0", "-3", "-o", outputFile}
-
-	// Create pipeline: pg_dump | zstd
 	dumpCmd := exec.CommandContext(ctx, "pg_dump", dumpArgs...)
-	compressCmd := exec.CommandContext(ctx, "zstd", compressArgs...)
-
-	// Set environment for password
 	dumpCmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", job.Password))
-
-	// Create pipe
-	pipe, err := dumpCmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("creating pipe: %w", err)
-	}
-	compressCmd.Stdin = pipe
-
-	// Capture stderr
 	dumpStderr, _ := dumpCmd.StderrPipe()
-	compressStderr, _ := compressCmd.StderrPipe()
 
-	// Start commands
-	if err := compressCmd.Start(); err != nil {
-		return nil, fmt.Errorf("starting zstd: %w", err)
-	}
-	if err := dumpCmd.Start(); err != nil {
-		return nil, fmt.Errorf("starting pg_dump: %w", err)
-	}
+	if target.Compression.Enabled && comp.Type != compress.CompressionNone {
+		cmdName, cmdArgs := comp.CompressCommand()
+		compressArgs := append(cmdArgs, "-o", outputFile)
+		compressCmd := exec.CommandContext(ctx, cmdName, compressArgs...)
 
-	// Wait for pg_dump to finish
-	if err := dumpCmd.Wait(); err != nil {
-		buf := make([]byte, 1024)
-		n, _ := dumpStderr.Read(buf)
-		return nil, fmt.Errorf("pg_dump failed: %s", string(buf[:n]))
-	}
+		pipe, err := dumpCmd.StdoutPipe()
+		if err != nil {
+			return nil, fmt.Errorf("creating pipe: %w", err)
+		}
+		compressCmd.Stdin = pipe
+		compressStderr, _ := compressCmd.StderrPipe()
 
-	// Wait for zstd to finish
-	if err := compressCmd.Wait(); err != nil {
-		buf := make([]byte, 1024)
-		n, _ := compressStderr.Read(buf)
-		return nil, fmt.Errorf("zstd failed: %s", string(buf[:n]))
+		if err := compressCmd.Start(); err != nil {
+			return nil, fmt.Errorf("starting compressor: %w", err)
+		}
+		if err := dumpCmd.Start(); err != nil {
+			return nil, fmt.Errorf("starting pg_dump: %w", err)
+		}
+
+		if err := dumpCmd.Wait(); err != nil {
+			buf := make([]byte, 1024)
+			n, _ := dumpStderr.Read(buf)
+			return nil, fmt.Errorf("pg_dump failed: %s", string(buf[:n]))
+		}
+		if err := compressCmd.Wait(); err != nil {
+			buf := make([]byte, 1024)
+			n, _ := compressStderr.Read(buf)
+			return nil, fmt.Errorf("compressor failed: %s", string(buf[:n]))
+		}
+	} else {
+		outFile, err := os.Create(outputFile)
+		if err != nil {
+			return nil, fmt.Errorf("creating output file: %w", err)
+		}
+		dumpCmd.Stdout = outFile
+
+		if err := dumpCmd.Run(); err != nil {
+			outFile.Close()
+			buf := make([]byte, 1024)
+			n, _ := dumpStderr.Read(buf)
+			return nil, fmt.Errorf("pg_dump failed: %s", string(buf[:n]))
+		}
+		outFile.Close()
 	}
 
 	// Get file info
@@ -183,12 +228,17 @@ func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, tar
 		return nil, fmt.Errorf("getting file info: %w", err)
 	}
 
+	compressionType := "none"
+	if target.Compression.Enabled {
+		compressionType = string(comp.Type)
+	}
+
 	return &engine.Artifact{
 		Database:    database,
-		File:        database + ".dump.zst",
+		File:        database + ".dump" + ext,
 		Path:        outputFile,
 		SizeBytes:   fileInfo.Size(),
-		Compression: "zstd",
+		Compression: compressionType,
 	}, nil
 }
 

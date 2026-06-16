@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/app"
+	"github.com/isYaoNoistu/dbbackupctl/internal/app"
 	"github.com/spf13/cobra"
 )
 

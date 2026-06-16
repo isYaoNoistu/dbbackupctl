@@ -6,7 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/dbbackupctl/dbbackupctl/internal/engine"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
 )
 
 // Inspector handles PostgreSQL inspection operations

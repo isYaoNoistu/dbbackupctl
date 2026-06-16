@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/cli"
-	"github.com/dbbackupctl/dbbackupctl/internal/exiterr"
+	"github.com/isYaoNoistu/dbbackupctl/internal/cli"
+	"github.com/isYaoNoistu/dbbackupctl/internal/exiterr"
 )
 
 var (

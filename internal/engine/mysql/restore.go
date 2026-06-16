@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/engine"
+	"github.com/isYaoNoistu/dbbackupctl/internal/checksum"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
+	"github.com/isYaoNoistu/dbbackupctl/internal/manifest"
 )
 
 // Restorer handles MySQL restore operations
@@ -31,34 +33,72 @@ func (r *Restorer) RestorePlan(ctx context.Context, record engine.BackupRecord, 
 		return nil, fmt.Errorf("manifest not found: %s", manifestPath)
 	}
 
-	// For now, return a basic plan
+	// Read manifest
+	mw := manifest.NewWriter()
+	m, err := mw.Read(record.BackupDir)
+	if err != nil {
+		return nil, fmt.Errorf("reading manifest: %w", err)
+	}
+
+	// Verify manifest status
+	if m.Status != "success" {
+		return nil, fmt.Errorf("backup %s failed, cannot restore", record.BackupID)
+	}
+
+	// Build plan
 	plan := &engine.RestorePlan{
 		BackupID:  record.BackupID,
+		SourceDB:  m.Job,
 		TargetDB:  opt.TargetDB,
 		BackupDir: record.BackupDir,
-		ChecksumOK: true, // TODO: Implement checksum verification
+		ChecksumOK: true,
 	}
 
-	// Build restore commands
-	// For each .sql.zst file in the backup directory
-	entries, err := os.ReadDir(record.BackupDir)
-	if err != nil {
-		return nil, fmt.Errorf("reading backup directory: %w", err)
-	}
-
-	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) == ".zst" && entry.Name() != "globals.sql.zst" {
-			sourceFile := filepath.Join(record.BackupDir, entry.Name())
-			plan.Artifacts = append(plan.Artifacts, engine.Artifact{
-				File: entry.Name(),
-				Path: sourceFile,
-			})
-
-			// Build command: zstd -dc file.sql.zst | mysql -h ... -u ... -p target_db
-			cmd := fmt.Sprintf("zstd -dc %s | mysql -h %s -P %d -u %s -p %s",
-				sourceFile, "127.0.0.1", 3306, "root", opt.TargetDB)
-			plan.Commands = append(plan.Commands, cmd)
+	// Verify checksum for each artifact
+	for _, a := range m.Artifacts {
+		if a.Checksum != "" {
+			ok, err := checksum.VerifyFileSHA256(a.Path, a.Checksum)
+			if err != nil {
+				plan.ChecksumOK = false
+				plan.Artifacts = append(plan.Artifacts, engine.Artifact{
+					Database: a.Database,
+					File:     a.File,
+					Path:     a.Path,
+				})
+				continue
+			}
+			if !ok {
+				plan.ChecksumOK = false
+			}
 		}
+
+		plan.Artifacts = append(plan.Artifacts, engine.Artifact{
+			Database:     a.Database,
+			File:         a.File,
+			Path:         a.Path,
+			SizeBytes:    a.SizeBytes,
+			Compression:  a.Compression,
+			ChecksumType: a.ChecksumType,
+			Checksum:     a.Checksum,
+		})
+
+		// Build restore command using job config
+		host := "127.0.0.1"
+		port := 3306
+		user := "root"
+		if opt.JobConfig.Host != "" {
+			host = opt.JobConfig.Host
+		}
+		if opt.JobConfig.Port != 0 {
+			port = opt.JobConfig.Port
+		}
+		if opt.JobConfig.User != "" {
+			user = opt.JobConfig.User
+		}
+
+		cmd := fmt.Sprintf("zstd -dc %s | mysql -h %s -P %d -u %s %s",
+			a.Path, host, port, user, opt.TargetDB)
+		plan.Commands = append(plan.Commands, cmd)
 	}
 
 	return plan, nil
@@ -75,17 +115,9 @@ func (r *Restorer) Restore(ctx context.Context, record engine.BackupRecord, opt 
 		Status:    "success",
 	}
 
-	// First, create the target database
-	if err := r.createDatabase(ctx, opt); err != nil {
-		result.Status = "failed"
-		result.Error = err
-		result.FinishedAt = time.Now().Format(time.RFC3339)
-		result.DurationSec = int64(time.Since(startTime).Seconds())
-		return result, err
-	}
-
-	// Restore each artifact
-	entries, err := os.ReadDir(record.BackupDir)
+	// Read manifest
+	mw := manifest.NewWriter()
+	m, err := mw.Read(record.BackupDir)
 	if err != nil {
 		result.Status = "failed"
 		result.Error = err
@@ -94,16 +126,67 @@ func (r *Restorer) Restore(ctx context.Context, record engine.BackupRecord, opt 
 		return result, err
 	}
 
-	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) == ".zst" && entry.Name() != "globals.sql.zst" {
-			sourceFile := filepath.Join(record.BackupDir, entry.Name())
-			if err := r.restoreDatabase(ctx, sourceFile, opt); err != nil {
-				result.Status = "failed"
-				result.Error = err
-				result.FinishedAt = time.Now().Format(time.RFC3339)
-				result.DurationSec = int64(time.Since(startTime).Seconds())
-				return result, err
+	// Verify checksum
+	if opt.JobConfig.Options["skip_checksum"] != true {
+		for _, a := range m.Artifacts {
+			if a.Checksum != "" {
+				ok, err := checksum.VerifyFileSHA256(a.Path, a.Checksum)
+				if err != nil {
+					result.Status = "failed"
+					result.Error = fmt.Errorf("checksum verification failed for %s: %w", a.Path, err)
+					result.FinishedAt = time.Now().Format(time.RFC3339)
+					result.DurationSec = int64(time.Since(startTime).Seconds())
+					return result, result.Error
+				}
+				if !ok {
+					result.Status = "failed"
+					result.Error = fmt.Errorf("checksum mismatch for %s", a.Path)
+					result.FinishedAt = time.Now().Format(time.RFC3339)
+					result.DurationSec = int64(time.Since(startTime).Seconds())
+					return result, result.Error
+				}
 			}
+		}
+	}
+
+	// Get connection info from job config
+	host := "127.0.0.1"
+	port := 3306
+	user := "root"
+	password := ""
+	if opt.JobConfig.Host != "" {
+		host = opt.JobConfig.Host
+	}
+	if opt.JobConfig.Port != 0 {
+		port = opt.JobConfig.Port
+	}
+	if opt.JobConfig.User != "" {
+		user = opt.JobConfig.User
+	}
+	if opt.JobConfig.Password != "" {
+		password = opt.JobConfig.Password
+	}
+
+	// Create target database
+	if err := r.createDatabase(ctx, host, port, user, password, opt.TargetDB); err != nil {
+		result.Status = "failed"
+		result.Error = err
+		result.FinishedAt = time.Now().Format(time.RFC3339)
+		result.DurationSec = int64(time.Since(startTime).Seconds())
+		return result, err
+	}
+
+	// Restore each artifact
+	for _, a := range m.Artifacts {
+		if a.Database == "__globals__" {
+			continue // Skip globals for MySQL
+		}
+		if err := r.restoreDatabase(ctx, a.Path, host, port, user, password, opt.TargetDB); err != nil {
+			result.Status = "failed"
+			result.Error = err
+			result.FinishedAt = time.Now().Format(time.RFC3339)
+			result.DurationSec = int64(time.Since(startTime).Seconds())
+			return result, err
 		}
 	}
 
@@ -114,56 +197,49 @@ func (r *Restorer) Restore(ctx context.Context, record engine.BackupRecord, opt 
 }
 
 // createDatabase creates the target database
-func (r *Restorer) createDatabase(ctx context.Context, opt engine.RestoreOptions) error {
-	// Build CREATE DATABASE command
+func (r *Restorer) createDatabase(ctx context.Context, host string, port int, user, password, targetDB string) error {
 	createCmd := exec.CommandContext(ctx, "mysql",
-		"-h", "127.0.0.1",
-		"-P", "3306",
-		"-u", "root",
-		"-e", fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` DEFAULT CHARACTER SET utf8mb4;", opt.TargetDB),
+		"-h", host,
+		"-P", fmt.Sprintf("%d", port),
+		"-u", user,
+		"-e", fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` DEFAULT CHARACTER SET utf8mb4;", targetDB),
 	)
 
-	// Set password from environment
-	createCmd.Env = append(os.Environ(), "MYSQL_PWD="+os.Getenv("MYSQL_PROD_RESTORE_PASSWORD"))
+	if password != "" {
+		createCmd.Env = append(os.Environ(), "MYSQL_PWD="+password)
+	}
 
-	// Capture stderr
-	stderr, _ := createCmd.StderrPipe()
-
-	if err := createCmd.Run(); err != nil {
-		buf := make([]byte, 1024)
-		n, _ := stderr.Read(buf)
-		return fmt.Errorf("creating database: %s", string(buf[:n]))
+	output, err := createCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("creating database: %s", string(output))
 	}
 
 	return nil
 }
 
 // restoreDatabase restores a single database
-func (r *Restorer) restoreDatabase(ctx context.Context, sourceFile string, opt engine.RestoreOptions) error {
-	// Build pipeline: zstd -dc file.sql.zst | mysql -h ... -u ... target_db
+func (r *Restorer) restoreDatabase(ctx context.Context, sourceFile, host string, port int, user, password, targetDB string) error {
 	zstdCmd := exec.CommandContext(ctx, "zstd", "-dc", sourceFile)
 	mysqlCmd := exec.CommandContext(ctx, "mysql",
-		"-h", "127.0.0.1",
-		"-P", "3306",
-		"-u", "root",
-		opt.TargetDB,
+		"-h", host,
+		"-P", fmt.Sprintf("%d", port),
+		"-u", user,
+		targetDB,
 	)
 
-	// Set password from environment
-	mysqlCmd.Env = append(os.Environ(), "MYSQL_PWD="+os.Getenv("MYSQL_PROD_RESTORE_PASSWORD"))
+	if password != "" {
+		mysqlCmd.Env = append(os.Environ(), "MYSQL_PWD="+password)
+	}
 
-	// Create pipe
 	pipe, err := zstdCmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("creating pipe: %w", err)
 	}
 	mysqlCmd.Stdin = pipe
 
-	// Capture stderr
 	zstdStderr, _ := zstdCmd.StderrPipe()
 	mysqlStderr, _ := mysqlCmd.StderrPipe()
 
-	// Start commands
 	if err := mysqlCmd.Start(); err != nil {
 		return fmt.Errorf("starting mysql: %w", err)
 	}
@@ -171,16 +247,14 @@ func (r *Restorer) restoreDatabase(ctx context.Context, sourceFile string, opt e
 		return fmt.Errorf("starting zstd: %w", err)
 	}
 
-	// Wait for zstd to finish
 	if err := zstdCmd.Wait(); err != nil {
-		buf := make([]byte, 1024)
+		buf := make([]byte, 4096)
 		n, _ := zstdStderr.Read(buf)
 		return fmt.Errorf("zstd failed: %s", string(buf[:n]))
 	}
 
-	// Wait for mysql to finish
 	if err := mysqlCmd.Wait(); err != nil {
-		buf := make([]byte, 1024)
+		buf := make([]byte, 4096)
 		n, _ := mysqlStderr.Read(buf)
 		return fmt.Errorf("mysql failed: %s", string(buf[:n]))
 	}

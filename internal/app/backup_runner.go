@@ -3,18 +3,20 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/checksum"
-	"github.com/dbbackupctl/dbbackupctl/internal/configenv"
-	"github.com/dbbackupctl/dbbackupctl/internal/disk"
-	"github.com/dbbackupctl/dbbackupctl/internal/engine"
-	"github.com/dbbackupctl/dbbackupctl/internal/engine/mysql"
-	"github.com/dbbackupctl/dbbackupctl/internal/engine/postgresql"
-	"github.com/dbbackupctl/dbbackupctl/internal/exiterr"
-	"github.com/dbbackupctl/dbbackupctl/internal/index"
-	"github.com/dbbackupctl/dbbackupctl/internal/lock"
-	"github.com/dbbackupctl/dbbackupctl/internal/manifest"
+	"github.com/isYaoNoistu/dbbackupctl/internal/checksum"
+	"github.com/isYaoNoistu/dbbackupctl/internal/configenv"
+	"github.com/isYaoNoistu/dbbackupctl/internal/disk"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine/mysql"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine/postgresql"
+	"github.com/isYaoNoistu/dbbackupctl/internal/exiterr"
+	"github.com/isYaoNoistu/dbbackupctl/internal/index"
+	"github.com/isYaoNoistu/dbbackupctl/internal/lock"
+	"github.com/isYaoNoistu/dbbackupctl/internal/manifest"
+	"github.com/isYaoNoistu/dbbackupctl/internal/retention"
 )
 
 // BackupOptions holds backup options
@@ -326,8 +328,30 @@ func (r *BackupRunner) buildRecord(dbType, jobName string, result *engine.Backup
 	}
 }
 
-// writeFailedRecord writes a failed backup record
+// writeFailedRecord writes a failed backup record and manifest
 func (r *BackupRunner) writeFailedRecord(dbType, jobName string, target engine.BackupTarget, startTime time.Time, backupErr error) {
+	// Create backup directory if it doesn't exist
+	os.MkdirAll(target.BackupDir, 0755)
+
+	// Write failed manifest
+	failedManifest := &manifest.Manifest{
+		Version:     "1.0",
+		BackupID:    target.BackupID,
+		DBType:      dbType,
+		Job:         jobName,
+		Status:      "failed",
+		BackupMode:  "logical",
+		StartedAt:   startTime,
+		FinishedAt:  time.Now(),
+		DurationSec: int64(time.Since(startTime).Seconds()),
+		Error: &manifest.ErrorInfo{
+			Code:    "BACKUP_FAILED",
+			Message: backupErr.Error(),
+		},
+	}
+	r.Manifest.Write(failedManifest, target.BackupDir)
+
+	// Write failed record to index
 	record := index.BackupRecord{
 		BackupID:    target.BackupID,
 		DBType:      dbType,
@@ -337,6 +361,7 @@ func (r *BackupRunner) writeFailedRecord(dbType, jobName string, target engine.B
 		DurationSec: int64(time.Since(startTime).Seconds()),
 		SizeBytes:   0,
 		BackupDir:   target.BackupDir,
+		Manifest:    target.BackupDir + "/manifest.json",
 	}
 	r.IndexStore.Append(record)
 }
@@ -352,12 +377,13 @@ func (r *BackupRunner) printDryRun(dbType, jobName string, target engine.BackupT
 	return nil
 }
 
-// runRetention runs retention policy
+// runRetention runs retention policy for a job
 func (r *BackupRunner) runRetention(dbType, jobName string) {
 	// Get job config for retention settings
 	var backupDir string
 	var keepLast, keepDays int
 	var maxSize string
+	var keepFailedLast int
 
 	if dbType == "mysql" {
 		job := r.Config.MySQL.JobConfigs[jobName]
@@ -383,12 +409,52 @@ func (r *BackupRunner) runRetention(dbType, jobName string) {
 	if maxSize == "" {
 		maxSize = r.Config.Core.RetentionMaxTotalSize
 	}
+	keepFailedLast = r.Config.Core.RetentionKeepFailedLast
 
-	// TODO: Implement retention logic
-	_ = backupDir
-	_ = keepLast
-	_ = keepDays
-	_ = maxSize
+	// Parse max size
+	maxSizeBytes, _ := configenv.ParseSize(maxSize)
+
+	// Query records for this job
+	records, err := r.IndexStore.Query(index.QueryFilter{
+		DBType: dbType,
+		Job:    jobName,
+	})
+	if err != nil {
+		fmt.Printf("Warning: failed to query records for retention: %v\n", err)
+		return
+	}
+
+	// Convert to retention records
+	retRecords := make([]retention.BackupRecord, len(records))
+	for i, rec := range records {
+		retRecords[i] = retention.BackupRecord{
+			BackupID:  rec.BackupID,
+			DBType:    rec.DBType,
+			Job:       rec.Job,
+			Status:    rec.Status,
+			StartedAt: rec.StartedAt,
+			SizeBytes: rec.SizeBytes,
+			BackupDir: rec.BackupDir,
+		}
+	}
+
+	// Create keeper and prune
+	keeper := retention.NewKeeper(keepLast, keepDays, maxSizeBytes, keepFailedLast)
+	toPrune := keeper.Prune(retRecords)
+
+	if len(toPrune) == 0 {
+		return
+	}
+
+	// Delete pruned backup directories
+	for _, rec := range toPrune {
+		if rec.BackupDir != "" && rec.BackupDir != backupDir {
+			fmt.Printf("Pruning backup: %s (dir: %s)\n", rec.BackupID, rec.BackupDir)
+			os.RemoveAll(rec.BackupDir)
+		}
+	}
+
+	fmt.Printf("Retention: pruned %d backup(s)\n", len(toPrune))
 }
 
 // parseSize parses size string to bytes

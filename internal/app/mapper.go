@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/configenv"
-	"github.com/dbbackupctl/dbbackupctl/internal/engine"
+	"github.com/isYaoNoistu/dbbackupctl/internal/configenv"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
 )
 
 // NewBackupID generates a new backup ID
@@ -58,6 +58,12 @@ func ConvertMySQLJob(cfg *configenv.Config, jobName string) (engine.JobConfig, e
 		Databases: job.Databases,
 		Timestamp: now.Format("20060102-150405"),
 		BackupID:  backupID,
+		Compression: engine.CompressionConfig{
+			Enabled: cfg.Core.CompressEnabled,
+			Type:    cfg.Core.CompressType,
+			Level:   cfg.Core.CompressLevel,
+			Threads: cfg.Core.CompressThreads,
+		},
 	}
 
 	return engineJob, target, nil
@@ -105,6 +111,12 @@ func ConvertPostgreSQLJob(cfg *configenv.Config, jobName string) (engine.JobConf
 		Databases: job.Databases,
 		Timestamp: now.Format("20060102-150405"),
 		BackupID:  backupID,
+		Compression: engine.CompressionConfig{
+			Enabled: cfg.Core.CompressEnabled,
+			Type:    cfg.Core.CompressType,
+			Level:   cfg.Core.CompressLevel,
+			Threads: cfg.Core.CompressThreads,
+		},
 	}
 
 	return engineJob, target, nil

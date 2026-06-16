@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/checksum"
-	"github.com/dbbackupctl/dbbackupctl/internal/configenv"
-	"github.com/dbbackupctl/dbbackupctl/internal/engine"
-	"github.com/dbbackupctl/dbbackupctl/internal/engine/mysql"
-	"github.com/dbbackupctl/dbbackupctl/internal/engine/postgresql"
-	"github.com/dbbackupctl/dbbackupctl/internal/exiterr"
-	"github.com/dbbackupctl/dbbackupctl/internal/index"
-	"github.com/dbbackupctl/dbbackupctl/internal/manifest"
+	"github.com/isYaoNoistu/dbbackupctl/internal/checksum"
+	"github.com/isYaoNoistu/dbbackupctl/internal/configenv"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine/mysql"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine/postgresql"
+	"github.com/isYaoNoistu/dbbackupctl/internal/exiterr"
+	"github.com/isYaoNoistu/dbbackupctl/internal/index"
+	"github.com/isYaoNoistu/dbbackupctl/internal/manifest"
 )
 
 // RestoreOptions holds restore options
@@ -80,11 +80,13 @@ func (r *RestoreRunner) RestoreMySQL(ctx context.Context, backupID string, opt R
 	// Create engine
 	eng := mysql.NewEngine()
 
-	// Build restore options
+	// Build restore options with job config
 	restoreOpt := engine.RestoreOptions{
 		TargetDB:       opt.TargetDB,
+		SourceDB:       opt.SourceDB,
 		AllowOverwrite: opt.AllowOverwrite,
 		Execute:        opt.Execute,
+		JobConfig:      restoreJob,
 	}
 
 	// Convert index record to engine record
@@ -114,7 +116,6 @@ func (r *RestoreRunner) RestoreMySQL(ctx context.Context, backupID string, opt R
 		r.writeRestoreRecord(record, opt, result)
 	}
 
-	_ = restoreJob // Will be used for actual restore
 	return nil
 }
 

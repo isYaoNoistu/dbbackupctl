@@ -1,4 +1,4 @@
-module github.com/dbbackupctl/dbbackupctl
+module github.com/isYaoNoistu/dbbackupctl
 
 go 1.25.0
 

@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dbbackupctl/dbbackupctl/internal/engine"
+	"github.com/isYaoNoistu/dbbackupctl/internal/compress"
+	"github.com/isYaoNoistu/dbbackupctl/internal/engine"
 )
 
 // Backuper handles MySQL backup operations
@@ -61,55 +62,69 @@ func (b *Backuper) Backup(ctx context.Context, job engine.JobConfig, target engi
 
 // backupDatabase backs up a single database
 func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, target engine.BackupTarget, database string) (*engine.Artifact, error) {
+	// Build compressor from target compression config
+	comp := compress.NewCompressor(target.Compression.Type, target.Compression.Level)
+	ext := comp.Extension()
+
 	// Build output file path
-	outputFile := filepath.Join(target.BackupDir, database+".sql.zst")
+	outputFile := filepath.Join(target.BackupDir, database+".sql"+ext)
 
 	// Build mysqldump command
 	dumpArgs := b.buildDumpArgs(job, database)
 
-	// Build compression command
-	compressArgs := []string{"-T0", "-3", "-o", outputFile}
-
-	// Create pipeline: mysqldump | zstd
-	// For now, we'll use a simple approach
 	dumpCmd := exec.CommandContext(ctx, "mysqldump", dumpArgs...)
-	compressCmd := exec.CommandContext(ctx, "zstd", compressArgs...)
 
 	// Set environment for password
 	dumpCmd.Env = append(os.Environ(), fmt.Sprintf("MYSQL_PWD=%s", job.Password))
 
-	// Create pipe
-	pipe, err := dumpCmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("creating pipe: %w", err)
-	}
-	compressCmd.Stdin = pipe
-
 	// Capture stderr
 	dumpStderr, _ := dumpCmd.StderrPipe()
-	compressStderr, _ := compressCmd.StderrPipe()
 
-	// Start commands
-	if err := compressCmd.Start(); err != nil {
-		return nil, fmt.Errorf("starting zstd: %w", err)
-	}
-	if err := dumpCmd.Start(); err != nil {
-		return nil, fmt.Errorf("starting mysqldump: %w", err)
-	}
+	if target.Compression.Enabled && comp.Type != compress.CompressionNone {
+		// Create pipeline: mysqldump | compressor
+		cmdName, cmdArgs := comp.CompressCommand()
+		compressArgs := append(cmdArgs, "-o", outputFile)
+		compressCmd := exec.CommandContext(ctx, cmdName, compressArgs...)
 
-	// Wait for mysqldump to finish
-	if err := dumpCmd.Wait(); err != nil {
-		// Read stderr for error message
-		buf := make([]byte, 1024)
-		n, _ := dumpStderr.Read(buf)
-		return nil, fmt.Errorf("mysqldump failed: %s", string(buf[:n]))
-	}
+		pipe, err := dumpCmd.StdoutPipe()
+		if err != nil {
+			return nil, fmt.Errorf("creating pipe: %w", err)
+		}
+		compressCmd.Stdin = pipe
+		compressStderr, _ := compressCmd.StderrPipe()
 
-	// Wait for zstd to finish
-	if err := compressCmd.Wait(); err != nil {
-		buf := make([]byte, 1024)
-		n, _ := compressStderr.Read(buf)
-		return nil, fmt.Errorf("zstd failed: %s", string(buf[:n]))
+		if err := compressCmd.Start(); err != nil {
+			return nil, fmt.Errorf("starting compressor: %w", err)
+		}
+		if err := dumpCmd.Start(); err != nil {
+			return nil, fmt.Errorf("starting mysqldump: %w", err)
+		}
+
+		if err := dumpCmd.Wait(); err != nil {
+			buf := make([]byte, 1024)
+			n, _ := dumpStderr.Read(buf)
+			return nil, fmt.Errorf("mysqldump failed: %s", string(buf[:n]))
+		}
+		if err := compressCmd.Wait(); err != nil {
+			buf := make([]byte, 1024)
+			n, _ := compressStderr.Read(buf)
+			return nil, fmt.Errorf("compressor failed: %s", string(buf[:n]))
+		}
+	} else {
+		// No compression - write directly to file
+		outFile, err := os.Create(outputFile)
+		if err != nil {
+			return nil, fmt.Errorf("creating output file: %w", err)
+		}
+		dumpCmd.Stdout = outFile
+
+		if err := dumpCmd.Run(); err != nil {
+			outFile.Close()
+			buf := make([]byte, 1024)
+			n, _ := dumpStderr.Read(buf)
+			return nil, fmt.Errorf("mysqldump failed: %s", string(buf[:n]))
+		}
+		outFile.Close()
 	}
 
 	// Get file info
@@ -118,12 +133,17 @@ func (b *Backuper) backupDatabase(ctx context.Context, job engine.JobConfig, tar
 		return nil, fmt.Errorf("getting file info: %w", err)
 	}
 
+	compressionType := "none"
+	if target.Compression.Enabled {
+		compressionType = string(comp.Type)
+	}
+
 	return &engine.Artifact{
 		Database:    database,
-		File:        database + ".sql.zst",
+		File:        database + ".sql" + ext,
 		Path:        outputFile,
 		SizeBytes:   fileInfo.Size(),
-		Compression: "zstd",
+		Compression: compressionType,
 	}, nil
 }
 
