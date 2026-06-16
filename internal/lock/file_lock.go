@@ -78,7 +78,7 @@ func (m *Manager) Acquire(dbType, job string, force bool) error {
 		return fmt.Errorf("marshaling lock info: %w", err)
 	}
 
-	if err := os.WriteFile(lockFile, data, 0644); err != nil {
+	if err := os.WriteFile(lockFile, data, 0640); err != nil {
 		return fmt.Errorf("writing lock file: %w", err)
 	}
 
@@ -132,18 +132,4 @@ func (m *Manager) readLock(lockFile string) (*LockInfo, error) {
 // removeLock removes a lock file
 func (m *Manager) removeLock(lockFile string) error {
 	return os.Remove(lockFile)
-}
-
-// isProcessRunning checks if a process is still running
-func isProcessRunning(pid int) bool {
-	// On Windows, we need to use a different approach
-	// For now, we'll use a simple approach
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-
-	// Try to send signal 0 to check if process exists
-	err = process.Signal(os.Kill)
-	return err == nil
 }

@@ -16,7 +16,7 @@ type Engine interface {
 	CheckConnection(ctx context.Context, job JobConfig) error
 
 	// EstimateSize estimates the backup size in bytes
-	EstimateSize(ctx context.Context, job JobConfig) (int64, error)
+	EstimateSize(ctx context.Context, job JobConfig, databases []string) (int64, error)
 
 	// Backup performs the backup operation
 	Backup(ctx context.Context, job JobConfig, target BackupTarget) (*BackupResult, error)

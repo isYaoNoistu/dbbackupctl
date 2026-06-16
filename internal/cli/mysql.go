@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/dbbackupctl/dbbackupctl/internal/app"
+	"github.com/dbbackupctl/dbbackupctl/internal/configenv"
 	"github.com/spf13/cobra"
 )
 
@@ -86,6 +89,7 @@ Examples:
 func newMySQLRestoreCmd() *cobra.Command {
 	var (
 		id             string
+		sourceDB       string
 		targetDB       string
 		execute        bool
 		allowOverwrite bool
@@ -105,18 +109,19 @@ Safety features:
   - Restore log is saved for audit
 
 Examples:
-  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --target-db aloof_restore
-  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --target-db aloof_restore --execute
-  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --target-db aloof --allow-overwrite --execute`,
-		Example: `  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --target-db aloof_restore
-  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --target-db aloof_restore --execute
-  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --target-db aloof --allow-overwrite --execute`,
+  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --source-db aloof --target-db aloof_restore
+  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --source-db aloof --target-db aloof_restore --execute
+  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --source-db aloof --target-db aloof --allow-overwrite --execute`,
+		Example: `  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --source-db aloof --target-db aloof_restore
+  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --source-db aloof --target-db aloof_restore --execute
+  dbbackupctl mysql restore --id mysql-prod-20260616-020000 --source-db aloof --target-db aloof --allow-overwrite --execute`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMySQLRestore(id, targetDB, execute, allowOverwrite)
+			return runMySQLRestore(id, sourceDB, targetDB, execute, allowOverwrite)
 		},
 	}
 
 	cmd.Flags().StringVar(&id, "id", "", "Backup ID to restore (required)")
+	cmd.Flags().StringVar(&sourceDB, "source-db", "", "Source database name (required if backup contains multiple databases)")
 	cmd.Flags().StringVar(&targetDB, "target-db", "", "Target database name (required)")
 	cmd.Flags().BoolVar(&execute, "execute", false, "Execute restore (default: plan only)")
 	cmd.Flags().BoolVar(&allowOverwrite, "allow-overwrite", false, "Allow overwrite original database")
@@ -128,23 +133,76 @@ Examples:
 }
 
 func runMySQLBackup(job string, all, dryRun, noCompress, noPrune, force bool) error {
-	// TODO: Implement MySQL backup logic
-	fmt.Println("MySQL backup command called")
-	fmt.Printf("Job: %s\n", job)
-	fmt.Printf("All: %v\n", all)
-	fmt.Printf("DryRun: %v\n", dryRun)
-	fmt.Printf("NoCompress: %v\n", noCompress)
-	fmt.Printf("NoPrune: %v\n", noPrune)
-	fmt.Printf("Force: %v\n", force)
-	return nil
+	// Load configuration
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	// Create backup runner
+	runner := app.NewBackupRunner(cfg)
+
+	// Build options
+	opt := app.BackupOptions{
+		DryRun:     dryRun,
+		NoCompress: noCompress,
+		NoPrune:    noPrune,
+		Force:      force,
+	}
+
+	// Backup all jobs
+	if all {
+		for _, j := range cfg.MySQL.Jobs {
+			if err := runner.BackupMySQL(context.Background(), j, opt); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Backup single job
+	if job == "" {
+		return fmt.Errorf("--job is required unless --all is used")
+	}
+
+	return runner.BackupMySQL(context.Background(), job, opt)
 }
 
-func runMySQLRestore(id, targetDB string, execute, allowOverwrite bool) error {
-	// TODO: Implement MySQL restore logic
-	fmt.Println("MySQL restore command called")
-	fmt.Printf("ID: %s\n", id)
-	fmt.Printf("TargetDB: %s\n", targetDB)
-	fmt.Printf("Execute: %v\n", execute)
-	fmt.Printf("AllowOverwrite: %v\n", allowOverwrite)
-	return nil
+func runMySQLRestore(id, sourceDB, targetDB string, execute, allowOverwrite bool) error {
+	// Load configuration
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	// Create restore runner
+	runner := app.NewRestoreRunner(cfg)
+
+	// Build options
+	opt := app.RestoreOptions{
+		SourceDB:       sourceDB,
+		TargetDB:       targetDB,
+		Execute:        execute,
+		AllowOverwrite: allowOverwrite,
+	}
+
+	return runner.RestoreMySQL(context.Background(), id, opt)
+}
+
+func loadConfig() (*configenv.Config, error) {
+	// Try default config directory
+	configDir := "/etc/dbbackupctl"
+	loader := configenv.NewLoader(configDir)
+	cfg, err := loader.Load()
+	if err != nil {
+		return nil, fmt.Errorf("loading config: %w", err)
+	}
+
+	// Validate configuration
+	validator := configenv.NewValidator()
+	if err := validator.Validate(cfg); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	return cfg, nil
 }

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/dbbackupctl/dbbackupctl/internal/cli"
+	"github.com/dbbackupctl/dbbackupctl/internal/exiterr"
 )
 
 var (
@@ -15,7 +17,12 @@ var (
 
 func main() {
 	if err := cli.Run(version, commit, date); err != nil {
+		var ee *exiterr.ExitError
+		if errors.As(err, &ee) {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", ee)
+			os.Exit(ee.Code)
+		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		os.Exit(exiterr.ExitGeneral)
 	}
 }

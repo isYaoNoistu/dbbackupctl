@@ -227,6 +227,11 @@ func mapCoreConfig(cfg *CoreConfig, env map[string]string) {
 
 // mapMySQLConfig maps environment variables to MySQLConfig
 func mapMySQLConfig(cfg *MySQLConfig, env map[string]string) {
+	// Initialize JobConfigs map if nil
+	if cfg.JobConfigs == nil {
+		cfg.JobConfigs = make(map[string]MySQLJobConfig)
+	}
+
 	if v, ok := env["MYSQL_ENABLED"]; ok {
 		cfg.Enabled = v == "true"
 	}
@@ -327,6 +332,11 @@ func mapMySQLConfig(cfg *MySQLConfig, env map[string]string) {
 
 // mapPostgreSQLConfig maps environment variables to PostgreSQLConfig
 func mapPostgreSQLConfig(cfg *PostgreSQLConfig, env map[string]string) {
+	// Initialize JobConfigs map if nil
+	if cfg.JobConfigs == nil {
+		cfg.JobConfigs = make(map[string]PostgreSQLJobConfig)
+	}
+
 	if v, ok := env["POSTGRES_ENABLED"]; ok {
 		cfg.Enabled = v == "true"
 	}

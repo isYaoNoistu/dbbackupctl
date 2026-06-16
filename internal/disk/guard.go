@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // Guard handles disk space protection
@@ -71,22 +70,7 @@ func GetDiskUsage(path string) (*DiskUsage, error) {
 		dir = filepath.Dir(dir)
 	}
 
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(dir, &stat); err != nil {
-		return nil, fmt.Errorf("statfs: %w", err)
-	}
-
-	total := int64(stat.Blocks) * int64(stat.Bsize)
-	free := int64(stat.Bavail) * int64(stat.Bsize)
-	available := int64(stat.Bfree) * int64(stat.Bsize)
-	used := total - free
-
-	return &DiskUsage{
-		Total:     total,
-		Free:      free,
-		Available: available,
-		Used:      used,
-	}, nil
+	return getDiskUsagePlatform(dir)
 }
 
 // FormatBytes formats bytes to human readable string
