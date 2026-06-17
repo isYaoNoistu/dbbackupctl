@@ -3,8 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"text/tabwriter"
+	"strings"
 
 	"github.com/isYaoNoistu/dbbackupctl/internal/index"
 	"github.com/spf13/cobra"
@@ -174,48 +173,46 @@ func printTable(records []index.BackupRecord) error {
 		return nil
 	}
 
-	// Create tabwriter
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-
-	// Print header
-	fmt.Fprintf(w, "备份ID\t类型\t环境\t状态\t开始时间\t耗时\t大小\t路径\n")
-	fmt.Fprintf(w, "------\t----\t----\t----\t--------\t----\t----\t----\n")
-
-	// Print records
+	headers := []string{"备份ID", "类型", "环境", "状态", "开始时间", "耗时", "大小", "路径"}
+	rows := make([][]string, 0, len(records))
 	for _, r := range records {
-		// Format duration
-		duration := formatDuration(r.DurationSec)
-
-		// Format size
-		size := formatSize(r.SizeBytes)
-
-		// Format started at
-		startedAt := r.StartedAt.Format("2006-01-02 15:04:05")
-
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		rows = append(rows, []string{
 			r.BackupID,
 			r.DBType,
 			r.Job,
-			r.Status,
-			startedAt,
-			duration,
-			size,
+			formatStatus(r.Status),
+			r.StartedAt.Format("2006-01-02 15:04:05"),
+			formatDuration(r.DurationSec),
+			formatSize(r.SizeBytes),
 			r.BackupDir,
-		)
+		})
 	}
 
-	w.Flush()
+	renderBoxTable(headers, rows)
 	return nil
 }
 
 func formatDuration(seconds int64) string {
 	if seconds < 60 {
-		return fmt.Sprintf("%ds", seconds)
+		return fmt.Sprintf("%d秒", seconds)
 	}
 	if seconds < 3600 {
-		return fmt.Sprintf("%dm%ds", seconds/60, seconds%60)
+		return fmt.Sprintf("%d分%d秒", seconds/60, seconds%60)
 	}
-	return fmt.Sprintf("%dh%dm%ds", seconds/3600, (seconds%3600)/60, seconds%60)
+	return fmt.Sprintf("%d时%d分%d秒", seconds/3600, (seconds%3600)/60, seconds%60)
+}
+
+func formatStatus(status string) string {
+	switch status {
+	case "success":
+		return "成功"
+	case "failed":
+		return "失败"
+	case "running":
+		return "运行中"
+	default:
+		return status
+	}
 }
 
 func formatSize(bytes int64) string {
@@ -235,4 +232,70 @@ func formatSize(bytes int64) string {
 	default:
 		return fmt.Sprintf("%d B", bytes)
 	}
+}
+
+func renderBoxTable(headers []string, rows [][]string) {
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = displayWidth(h)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if w := displayWidth(cell); w > widths[i] {
+				widths[i] = w
+			}
+		}
+	}
+
+	printTableBorder("┌", "┬", "┐", widths)
+	printTableRow(headers, widths)
+	printTableBorder("├", "┼", "┤", widths)
+	for _, row := range rows {
+		printTableRow(row, widths)
+	}
+	printTableBorder("└", "┴", "┘", widths)
+}
+
+func printTableBorder(left, middle, right string, widths []int) {
+	fmt.Print(left)
+	for i, width := range widths {
+		if i > 0 {
+			fmt.Print(middle)
+		}
+		fmt.Print(strings.Repeat("─", width+2))
+	}
+	fmt.Println(right)
+}
+
+func printTableRow(row []string, widths []int) {
+	fmt.Print("│")
+	for i, cell := range row {
+		fmt.Printf(" %s │", padRight(cell, widths[i]))
+	}
+	fmt.Println()
+}
+
+func padRight(s string, width int) string {
+	padding := width - displayWidth(s)
+	if padding <= 0 {
+		return s
+	}
+	return s + strings.Repeat(" ", padding)
+}
+
+func displayWidth(s string) int {
+	width := 0
+	for _, r := range s {
+		switch {
+		case r == '\t':
+			width += 4
+		case r < 0x20:
+			continue
+		case r <= 0x7e:
+			width++
+		default:
+			width += 2
+		}
+	}
+	return width
 }

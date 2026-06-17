@@ -180,6 +180,31 @@ dbbackupctl postgresql backup --all
 - 本地索引记录。
 - 命令运行记录。
 
+## 大数据量备份与业务影响
+
+100 GB 以上的数据可以使用本工具备份，但必须关注备份窗口和服务器资源。逻辑备份会读取大量数据，主要影响是磁盘 IO、CPU、网络带宽、数据库缓存命中率和备份持续时间。建议在业务低峰执行，并先通过 `check` 和 `--dry-run` 确认配置。
+
+MySQL 默认配置使用：
+
+```text
+MYSQL_<JOB>_SINGLE_TRANSACTION=true
+MYSQL_<JOB>_LOCK_TABLES=false
+```
+
+这会让 `mysqldump` 采用 `--single-transaction --skip-lock-tables`。对 InnoDB 表来说，通常不会锁住普通读写，但会开启一个长事务快照。大库备份期间需要注意：
+
+- 长事务会延迟 undo purge，可能增加 undo/history list 压力。
+- 备份会持续读取大量数据，可能影响 IO 和 Buffer Pool。
+- 备份期间尽量避免 DDL，元数据锁可能互相等待。
+- MyISAM 等非事务表无法通过 `--single-transaction` 获得一致性；如果强制一致性需要开启 `MYSQL_<JOB>_LOCK_TABLES=true`，但这会引入锁表影响。
+
+PostgreSQL 使用 `pg_dump`。它不会阻塞普通读写，但会对被导出的对象持有 `ACCESS SHARE` 锁，通常会阻止同时执行的 DDL。大库备份期间需要注意：
+
+- 长时间快照可能推迟 vacuum 清理旧版本。
+- 备份会产生明显 IO、CPU 和网络开销。
+- 如果数据库写入很活跃，备份窗口应避开高峰。
+- `pg_dumpall --globals-only` 只导出全局对象，通常开销很小。
+
 ## 查询备份
 
 ```bash

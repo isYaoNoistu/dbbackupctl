@@ -166,10 +166,16 @@ func (b *Backuper) buildDumpArgs(job engine.JobConfig, database string) []string
 		"--hex-blob",
 		"--set-gtid-purged=OFF",
 		"--column-statistics=0",
+		"--skip-lock-tables",
 		database,
 	}
 
 	// Add options from job config
+	if opts, ok := job.Options["lock_tables"]; ok && opts.(bool) {
+		args = removeArg(args, "--single-transaction")
+		args = removeArg(args, "--skip-lock-tables")
+		args = appendBeforeDatabase(args, "--lock-tables")
+	}
 	if opts, ok := job.Options["single_transaction"]; ok && !opts.(bool) {
 		args = removeArg(args, "--single-transaction")
 	}
@@ -187,6 +193,17 @@ func (b *Backuper) buildDumpArgs(job engine.JobConfig, database string) []string
 	}
 
 	return args
+}
+
+func appendBeforeDatabase(args []string, value string) []string {
+	if len(args) == 0 {
+		return []string{value}
+	}
+	result := make([]string, 0, len(args)+1)
+	result = append(result, args[:len(args)-1]...)
+	result = append(result, value)
+	result = append(result, args[len(args)-1])
+	return result
 }
 
 // removeArg removes an argument from the list
